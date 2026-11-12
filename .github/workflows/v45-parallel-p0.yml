@@ -39,7 +39,11 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-      - run: node --test v45/shared/data.node.test.mjs
+      - run: node --check v45/entry-nav.js
+      - run: node --check v45/selection/main.js
+      - run: node --check v45/research/main.js
+      - run: node --check v45/review/main.js
+      - run: node --test v45/shared/data.node.test.mjs v45/entry-nav.node.test.mjs
       - name: Existing full web suite (baseline failures remain visible)
         run: npm test
         continue-on-error: true

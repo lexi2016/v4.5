@@ -10,11 +10,12 @@ function productLines(p) {
 }
 function renderA(b) {
  const p=b.product??{}, c=b.chart??{}, m=b.company??{}, d2=b.d2??{}, d5=b.d5??{};
+ const companyGaps=Array.isArray(m.availability_gaps)?m.availability_gaps.join("；"):String(m.availability_gaps??"");
  $("overview").innerHTML=`<div class="v45-stat"><strong>${esc(p.status??"UNKNOWN")}</strong><span>数值日包</span></div><div class="v45-stat"><strong>${esc(c.status??"UNKNOWN")}</strong><span>原图描述</span></div><div class="v45-stat"><strong>${esc(m.status??"UNKNOWN")}</strong><span>公司材料</span></div><div class="v45-stat"><strong>${esc(p.source_generation??"未提供")}</strong><span>来源generation</span></div>`;
  $("evidence").innerHTML=[
  card("量价与数值日包",p.status,["材料日期："+(p.data_date??b.date),"来源身份："+(p.source_identity?.status??"未提供"),...productLines(p)]),
  card("原图 / 关键K",c.status,["图表行数："+(c.rows??"未提供"),"图表资产："+(Array.isArray(c.assets)?c.assets.length:"未提供"),"input SHA："+(c.input_sha256??"未提供"),"原图描述READY不代表图片资产已全部读取"]),
- card("公司材料",m.status,["缺失原因："+(m.missing_reason??"无"),"可用性缺口："+(m.availability_gaps??[]).join("；")||"未提供"]),
+ card("公司材料",m.status,["缺失原因："+(m.missing_reason??"无"),"可用性缺口："+(companyGaps||"未提供")]),
  card("D+2 / D+5案例", "按原案例接口返回",["D+2："+(d2.status??"UNKNOWN")+" · 成熟"+(d2.valid??"未知")+" · 未成熟"+(d2.not_matured??"未知")+" · 缺价"+(d2.missing_price??"未知"),"D+5："+(d5.status??"UNKNOWN")+" · 成熟"+(d5.valid??"未知")+" · 未成熟"+(d5.not_matured??"未知")+" · 缺价"+(d5.missing_price??"未知"),"历史案例统计不能替代最新信号的成熟度认证"])
  ].join("");
  $("lineage").innerHTML=`<p>市场：A股 · 证券：<strong>${esc(b.symbol)}</strong> · 来源日：${esc(b.date)}</p><p>数值日包generation：${esc(p.source_generation??"未提供")}</p><p>原图SHA：${esc(c.chart_manifest?.sha256??c.product_manifest?.sha256??"未提供")}</p><p>公司材料状态：${esc(m.status??"CANNOT_CONFIRM")}。研究回包收到不等于材料已导入。</p>`;

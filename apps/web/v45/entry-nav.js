@@ -4,7 +4,7 @@ const entries = [
   { id: "review", label: "复盘验证", href: "/v45/review/" },
 ];
 
-function attachEntries() {
+export function attachEntries() {
   const nav = document.querySelector('nav.entry-nav[aria-label="功能入口"]');
   if (!nav) return;
   const vibe = [...nav.querySelectorAll("a")].find(link =>

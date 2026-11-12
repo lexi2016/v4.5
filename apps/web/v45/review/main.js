@@ -1,4 +1,4 @@
-import { loadReview, normaliseDate, readJson } from "../shared/data.js";
+import { apiSymbol, loadReview, normaliseDate, readJson } from "../shared/data.js";
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const dateInput=d=>d.slice(0,4)+"-"+d.slice(4,6)+"-"+d.slice(6,8);
@@ -32,9 +32,11 @@ async function maturity(e) {
   $("maturity").innerHTML='<article class="v45-evidence"><h3>港股成熟度</h3><span class="v45-pill">CANNOT_CONFIRM</span><p>当前证券级D+2/D+5接口证据未在本批合同中确认。保持未知，不套用A股事件案例或交易日历。</p></article>';
   return;
  }
- const qs=h=>new URLSearchParams({date,symbol,group:"original",horizon:h});
+ const resolvedSymbol=apiSymbol("A",symbol);
+ const qs=h=>new URLSearchParams({date,symbol:resolvedSymbol,group:"original",horizon:h});
  try {
   const [d2,d5]=await Promise.all([readJson("/api/v4/research/a-share/event-cases?"+qs("d2")),readJson("/api/v4/research/a-share/event-cases?"+qs("d5"))]);
+  for(const item of [d2,d5]) if(item.data_date && item.data_date!==date) throw new Error("D+2/D+5来源日期不匹配，拒绝混合展示");
   const render=(label,x)=>`<article class="v45-evidence"><h3>${label}</h3><span class="v45-pill">${esc(x.status??"CANNOT_CONFIRM")}</span><p>总案例：${esc(x.total??"未知")} · 有效：${esc(x.valid??"未知")}</p><p>未成熟：${esc(x.not_matured??"未知")} · 缺价：${esc(x.missing_price??"未知")}</p><p>排除/异常：非有限收益 ${esc(x.nonfinite_return??"未知")} · 非正价格 ${esc(x.nonpositive_price??"未知")}</p></article>`;
   $("maturity").innerHTML=render("D+2",d2)+render("D+5",d5);
  } catch(e) {$("maturity").innerHTML='<article class="v45-evidence"><h3>成熟度不可确认</h3><p>'+esc(e instanceof Error?e.message:"接口读取失败")+'</p></article>';}
