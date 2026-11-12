@@ -1,13 +1,28 @@
-import { DEFAULT_DATE, apiSymbol, fetchAllPreselection, formulaComparisonFor, normaliseDate } from "../shared/data.js";
+import { DEFAULT_DATE, apiSymbol, fetchAllPreselection, fetchFormulaComparisonRows, formulaComparisonFor, normaliseDate } from "../shared/data.js";
 const $ = id => document.getElementById(id);
-let current = null, page = 1, pageSize = 50, filtered = [];
+let current = null, page = 1, pageSize = 50, filtered = [], formulaRequest = 0;
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const dateInput = d => d.slice(0,4)+"-"+d.slice(4,6)+"-"+d.slice(6,8);
 const statusClass = s => /READY|VERIFIED|COMPLETE/.test(String(s)) ? "good" : /PARTIAL|STALE|NOT_RUN/.test(String(s)) ? "warn" : "bad";
-function renderFormula(date) {
+function renderFormula(date, market) {
+  const request = ++formulaRequest;
+  if (market === "HK") {
+    $("formula").innerHTML = '<p>港股沿用港股通/0.2原合同，不适用A股原公式与v1.9.2比较。</p>';
+    return;
+  }
   const item = formulaComparisonFor(date);
-  if (!item) { $("formula").textContent = "该观察日没有本批冻结的原公式/v1.9.2对照摘要；不自动重算，也不套用港股0.2合同。"; return; }
-  $("formula").innerHTML = `<div class="v45-grid"><div class="v45-stat"><strong>${item.original}</strong><span>原公式入选</span></div><div class="v45-stat"><strong>${item.v192}</strong><span>v1.9.2入选</span></div><div class="v45-stat"><strong>${item.common}</strong><span>共同入选</span></div><div class="v45-stat"><strong>${item.originalOnly + item.v192Only}</strong><span>单侧入选关系</span></div></div><p class="v45-muted">来源日 ${item.sourceDate} → 观察日 ${item.observationDate}。仅原公式 ${item.originalOnly}；仅v1.9.2 ${item.v192Only}。该对照是已冻结结果，未重新计算；逐条件原因必须以原条件明细为准，没有证据时显示“尚无条件明细”。</p>`;
+  if (!item) { $("formula").textContent = "该观察日没有冻结的原公式/v1.9.2逐股对照；不自动重算，也不套用港股0.2合同。"; return; }
+  $("formula").innerHTML = `<div class="v45-grid"><div class="v45-stat"><strong>${item.original}</strong><span>原公式入选</span></div><div class="v45-stat"><strong>${item.v192}</strong><span>v1.9.2入选</span></div><div class="v45-stat"><strong>${item.common}</strong><span>共同入选</span></div><div class="v45-stat"><strong>${item.originalOnly + item.v192Only}</strong><span>单侧入选关系</span></div></div><p class="v45-muted">来源日 ${item.sourceDate} → 观察日 ${item.observationDate}。仅原公式 ${item.originalOnly}；仅v1.9.2 ${item.v192Only}。冻结原结果，不重新计算；逐股差异原因按原证据展示，不把不同分数相加。</p><div id="formula-rows" class="v45-empty">正在读取冻结的逐股对照…</div><p><a href="/research-panel/workbench.html?mode=current">打开原公式研究面板</a></p>`;
+  fetchFormulaComparisonRows(date).then(rows => {
+    if (request !== formulaRequest) return;
+    const host = $("formula-rows");
+    if (!host) return;
+    host.innerHTML = `<div class="v45-table-wrap"><table><thead><tr><th>差异类别</th><th>证券</th><th>原公式</th><th>v1.9.2角色</th><th>v1.9.2分数</th><th>追高风险分</th><th>原始差异原因</th><th>来源checkpoint SHA</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.category)}</td><td><strong>${esc(r.symbol)}</strong><small>${esc(r.display_name)}</small></td><td>${esc(r.original_status)}<small>${esc(r.original_raw_hits || "无命中说明")}</small></td><td>${esc(r.v192_multi_head_final_role || r.v192_candidate_role || "未提供")}<small>member=${esc(r.v192_member)}</small></td><td>${esc(r.v192_final_score || "未提供")}</td><td>${esc(r.v192_risk_chase_score || "未提供")}</td><td>${esc(r.difference_reason || "未提供条件明细")}</td><td><details><summary>SHA</summary><small>${esc(r.source_checkpoint_sha256)}</small></details></td></tr>`).join("")}</tbody></table></div>`;
+  }).catch(error => {
+    if (request !== formulaRequest) return;
+    const host = $("formula-rows");
+    if (host) host.textContent = (error instanceof Error ? error.message : "逐股对照不可读取") + "。汇总数字仍是冻结摘要，不代表逐股表已校验。";
+  });
 }
 function render(data) {
   const market = $("market").value;
@@ -31,7 +46,7 @@ function render(data) {
   $("next")?.addEventListener("click",()=>{page=Math.min(totalPages,page+1);render(data)});
   $("status").className = "v45-status "+(data.complete?"good":"warn");
   $("status").textContent = data.complete ? `候选完整读取：${data.date} · ${data.rows.length}只去重证券 · ${data.membershipCount}条来源关系。各来源状态仍独立保留。` : `候选读取未通过完整性核验：${data.completenessReason || "CANNOT_CONFIRM"}。结果可查看但不能宣称完整。`;
-  renderFormula(data.date);
+  renderFormula(data.date, market);
 }
 async function load() {
   $("status").className="v45-status";$("status").textContent="正在按原API分页读取完整候选…";

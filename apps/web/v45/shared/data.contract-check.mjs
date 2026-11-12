@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { mergePoolPages, normaliseDate, securityIdentity, formulaComparisonFor } from "./data.js";
 
 function page(offset, hasMore, pools, marketTotals={A:2,HK:1}) {
@@ -56,4 +58,24 @@ test("formula comparison is frozen, date-scoped and not inferred for HK",()=>{
   assert.equal(formulaComparisonFor("20261114"),null);
   assert.equal(normaliseDate("2026-11-12"),"20261112");
   assert.throws(()=>normaliseDate("2026-02-30"),/日期无效/);
+});
+
+test("sanitised frozen formula comparison fixture retains exact per-stock evidence", async () => {
+  const compressed = readFileSync(new URL("./formula-comparison.v1.bin", import.meta.url));
+  const fixture = JSON.parse(gunzipSync(compressed).toString("utf8"));
+  assert.equal(fixture.schema_version,"v45.frozen_formula_comparison.v1");
+  assert.equal(fixture.status,"FROZEN_SOURCE_DATA_NOT_RECALCULATED");
+  assert.equal(fixture.records.length,118);
+  const fetcher = async () => new Response(compressed,{status:200});
+  const day12 = await fetchFormulaComparisonRows("20261112",fetcher);
+  const day13 = await fetchFormulaComparisonRows("20261113",fetcher);
+  assert.equal(day12.length,69);
+  assert.equal(day13.length,49);
+  assert.equal(day12.filter(x=>x.category==="仅原公式").length,44);
+  assert.equal(day12.filter(x=>x.category==="仅v1.9.2").length,25);
+  assert.equal(day13.filter(x=>x.category==="仅原公式").length,39);
+  assert.equal(day13.filter(x=>x.category==="仅v1.9.2").length,9);
+  assert.equal(day13.filter(x=>x.category==="共同入选").length,1);
+  assert.ok(fixture.records.every(x=>/^[0-9a-f]{64}$/.test(x.source_checkpoint_sha256)));
+  assert.ok(fixture.records.every(x=>!Object.keys(x).some(k=>/local_path|checkpoint_path/i.test(k))));
 });

@@ -205,3 +205,33 @@ export function formulaComparisonFor(dateValue) {
   const date = normaliseDate(dateValue);
   return FORMULA_COMPARISONS.find(x => x.observationDate === date) ?? null;
 }
+
+export async function fetchFormulaComparisonRows(dateValue, fetcher = fetch) {
+  const date = normaliseDate(dateValue);
+  const response = await fetcher("/v45/shared/formula-comparison.v1.bin", {
+    method: "GET", credentials: "same-origin", redirect: "error", cache: "no-store",
+  });
+  if (!response.ok) throw new Error("冻结公式差异文件读取失败 HTTP " + response.status);
+  if (typeof DecompressionStream === "undefined") throw new Error("浏览器不支持gzip解压，逐股对照不可读取");
+  const compressed = await response.arrayBuffer();
+  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const parsed = JSON.parse(await new Response(stream).text());
+  if (parsed.schema_version !== "v45.frozen_formula_comparison.v1"
+      || parsed.status !== "FROZEN_SOURCE_DATA_NOT_RECALCULATED"
+      || !Array.isArray(parsed.records)) throw new Error("冻结公式对照合同不匹配");
+  const rows = parsed.records.filter(row => row.observation_date === date);
+  const summary = formulaComparisonFor(date);
+  if (!summary) return [];
+  const categoryCounts = rows.reduce((acc, row) => {
+    acc[row.category] = (acc[row.category] ?? 0) + 1;
+    return acc;
+  }, {});
+  const valid = rows.length === summary.originalOnly + summary.v192Only + summary.common
+    && (categoryCounts["仅原公式"] ?? 0) === summary.originalOnly
+    && (categoryCounts["仅v1.9.2"] ?? 0) === summary.v192Only
+    && (categoryCounts["共同入选"] ?? 0) === summary.common
+    && rows.every(row => row.source_date === summary.sourceDate
+      && /^[0-9a-f]{64}$/.test(row.source_checkpoint_sha256 ?? ""));
+  if (!valid) throw new Error("逐股公式差异与冻结汇总/来源SHA不一致");
+  return rows;
+}

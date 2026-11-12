@@ -7,24 +7,27 @@
 
 ## Additive entry points
 
-- `/v45/selection/`: reads the existing `/api/v4/preselection-pools` with bounded 300-row pagination; validates exact date and offset chain; deduplicates by market-qualified security identity while preserving source membership, source date, rank, score, status and SHA. Formula comparison uses frozen A-share summary counts only. HK formula comparison is intentionally not inferred.
-- `/v45/research/`: A-share reads the existing daily-product, original-chart, company-materials and event-cases endpoints. A-share bare codes are converted using the exchange prefix convention to the existing API symbol form. HK reads the existing HK_CONNECT manager workbench research endpoint (slot 1530). It separates material readiness from import/readiness and never writes.
+- `/v45/selection/`: reads the existing `/api/v4/preselection-pools` with bounded 300-row pagination; validates exact date and offset chain; deduplicates by market-qualified security identity while preserving source membership, source date, rank, score, status and SHA.
+- A-share formula comparison: 118 sanitized, frozen row-level comparison records from the two supplied comparison files; preserves original condition fields, v1.9.2 roles/scores, difference reasons and checkpoint SHA. Local checkpoint paths and raw candidate-pool CSVs are excluded. The UI validates row counts/categories against the frozen aggregates. HK is explicitly excluded from A-share formula comparison.
+- `/v45/research/`: A-share reads the existing daily-product, original-chart, company-materials and event-cases endpoints. A-share bare codes are converted using the exchange-prefix convention to the existing API symbol form. HK reads the existing HK_CONNECT manager workbench research endpoint (slot 1530). It separates material readiness from import/readiness and never writes.
 - `/v45/review/`: reads the exact-date `/api/v3/review` envelope, shows A/HK separately, and reads A-share D+2/D+5 event-case maturity on explicit user-selected source date. HK maturity remains CANNOT_CONFIRM if no exact HK security-level field is supplied.
 
 ## Source/data decisions
 
-- The API role App.vue is SHA-pinned and intentionally not edited in place. The existing API-role V4 index source is used as the build entry; a small idempotent DOM adapter appends the three new links immediately after the existing Vibe 8910 link. The old App.vue, all old buttons, URLs and default behavior remain untouched.
-- The entry adapter tolerates Vue rerenders and never creates a second nav or route.
+- The API-role `index.html` source from the role matrix is the Vite entry. The SHA-pinned App.vue role overlay is not edited in place. A small idempotent DOM adapter appends the three links immediately after the existing Vibe 8910 link; the original App.vue and all legacy buttons, URLs and default behavior remain untouched.
+- The adapter tolerates Vue rerenders and does not create a second navigation or route.
 - Vite gains three MPA inputs; existing inputs remain.
-- The real 2026-11-13 Drive delta ZIP was SHA-256 verified locally. Raw candidate CSVs and large API responses are not committed. Only frozen formula aggregate counts and contract-level tests are represented in code.
+- The real 2026-11-13 Drive delta ZIP was SHA-256 verified locally. The complete ZIP, raw candidate CSVs and large API responses are not committed. Only the sanitized 118-row formula-comparison fixture and contract tests are included.
 - 2026-11-12 historical Futu 426/426 is labeled historical; 2026-11-13 Futu remains CANNOT_CONFIRM_NOT_QUERIED.
 - Stage7 missing/partial is shown as an independent source state; it does not suppress other source pools.
 - No HK v1.9.2 comparison is invented.
 
-## Tests
+## Tests and review
 
-- Node built-in tests cover market-qualified identity, A/HK API symbol mapping, multi-page deduplication, source membership preservation, optional Stage7 isolation, pagination gaps, exact date validation and frozen formula comparison.
-- GitHub Actions compares the existing full web suite against the fixed baseline and separately runs targeted tests, typecheck and Vite build. Existing fixture-dependent failures are reported separately from changed-code checks.
+- Node contract checks cover market-qualified identity, A/HK API symbol mapping, multi-page deduplication, source membership preservation, optional Stage7 isolation, pagination gaps, exact date validation, frozen formula row integrity and nav insertion/idempotency.
+- CI runs Node syntax checks, targeted contract checks, existing full web suite, Vue typecheck and Vite build.
+- Baseline full web-suite failures are compared against the fixed source baseline; they are reported separately and are not treated as new-feature test passes.
+- Independent review pass checked exact API-role HTML entry, SHA-pinned App.vue non-modification, no raw pool upload, source/date identity, pagination chain, market separation, failure isolation and read-only behavior.
 
 ## Deployment and production
 
