@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mergePoolPages, normaliseDate, securityIdentity, formulaComparisonFor } from "./data.js";
+import { mergePoolPages, normaliseDate, securityIdentity, apiSymbol, formulaComparisonFor } from "./data.js";
 
 function page(offset, hasMore, pools, marketTotals={A:2,HK:1}) {
   return { trade_date:"20261112", data_status:"PARTIAL_WITH_ROWS", market_totals:marketTotals,
@@ -11,6 +11,9 @@ test("security identity keeps A/HK namespaces separate and normalises source pre
   assert.equal(securityIdentity("A","000159.SZ"),"A:000159");
   assert.equal(securityIdentity("HK","HK.00700"),"HK:00700");
   assert.notEqual(securityIdentity("A","00001"),securityIdentity("HK","00001"));
+  assert.equal(apiSymbol("A","A.000159"),"000159.SZ");
+  assert.equal(apiSymbol("A","A.688256"),"688256.SH");
+  assert.equal(apiSymbol("HK","HK.00700"),"HK.00700");
 });
 test("multi-page merge deduplicates securities but preserves every source membership",()=>{
   const pages=[

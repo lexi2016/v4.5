@@ -26,6 +26,19 @@ export function securityIdentity(marketValue, symbolValue) {
   return market + ":" + code;
 }
 
+export function apiSymbol(marketValue, symbolValue) {
+  const market = marketOf(marketValue);
+  const raw = String(symbolValue ?? "").trim().toUpperCase();
+  if (market === "HK") return raw.startsWith("HK.") ? raw : "HK." + raw.replace(/\.HK$/, "");
+  if (market !== "A") return raw;
+  if (/\.(SZ|SH|BJ)$/.test(raw)) return raw;
+  const code = raw.replace(/^A\./, "");
+  if (/^[569]/.test(code)) return code + ".SH";
+  if (/^[023]/.test(code)) return code + ".SZ";
+  if (/^[48]/.test(code)) return code + ".BJ";
+  return code;
+}
+
 export function displaySymbol(marketValue, symbolValue) {
   const market = marketOf(marketValue);
   const raw = String(symbolValue ?? "").trim().toUpperCase();
@@ -165,7 +178,8 @@ export async function loadResearchBundle({ market: marketValue, symbol, date }, 
     return { market, symbol, date: safeDate, workbench, row, status: workbench.status ?? "CANNOT_CONFIRM", source: "HK_CONNECT_0_2_MANAGER_WORKBENCH" };
   }
   if (market !== "A") throw new Error("不支持的市场身份：" + market);
-  const qs = new URLSearchParams({ date: safeDate, symbol });
+  const resolvedSymbol = apiSymbol(market, symbol);
+  const qs = new URLSearchParams({ date: safeDate, symbol: resolvedSymbol });
   const [product, chart, company, d2, d5] = await Promise.all([
     readJson("/api/v4/research/a-share/daily-product?" + qs, fetcher),
     readJson("/api/v4/research/a-share/original-chart?" + qs, fetcher),
@@ -177,7 +191,7 @@ export async function loadResearchBundle({ market: marketValue, symbol, date }, 
     const actual = item.data_date ?? item.dataDate;
     if (actual && actual !== safeDate) throw new Error("个股研究返回日期冲突，已拒绝合并");
   }
-  return { market, symbol, date: safeDate, product, chart, company, d2, d5, status: product.status ?? "CANNOT_CONFIRM", source: "V4_A_SHARE_DAILY_PRODUCT" };
+  return { market, symbol: resolvedSymbol, date: safeDate, product, chart, company, d2, d5, status: product.status ?? "CANNOT_CONFIRM", source: "V4_A_SHARE_DAILY_PRODUCT" };
 }
 
 export async function loadReview(dateValue, fetcher = fetch) {

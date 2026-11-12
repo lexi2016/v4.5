@@ -1,4 +1,4 @@
-import { DEFAULT_DATE, fetchAllPreselection, formulaComparisonFor, normaliseDate } from "../shared/data.js";
+import { DEFAULT_DATE, apiSymbol, fetchAllPreselection, formulaComparisonFor, normaliseDate } from "../shared/data.js";
 const $ = id => document.getElementById(id);
 let current = null, page = 1, pageSize = 50, filtered = [];
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -22,7 +22,7 @@ function render(data) {
     const sources = r.sources.map(s => `<span class="v45-pill">${esc(s.poolId)}</span>`).join(" ");
     const ranks = r.sources.map(s => `${esc(s.poolId)}：${esc(s.rank ?? "排名未提供")} / ${esc(s.score ?? "分数未提供")}`).join("<br>");
     const sourceDate = r.sourceDates.join(", ") || "未知";
-    const researchUrl = "/v45/research/?"+new URLSearchParams({market:r.market,symbol:r.displaySymbol,date:r.sourceDates[0] ?? data.date,observationDate:data.date});
+    const researchUrl = "/v45/research/?"+new URLSearchParams({market:r.market,symbol:apiSymbol(r.market,r.symbol),date:r.sourceDates[0] ?? data.date,observationDate:data.date});
     return `<tr><td>${r.market}</td><td><strong>${esc(r.displaySymbol)}</strong><small>${esc(r.name)}</small></td><td><div class="v45-pills">${sources}</div></td><td>${esc(sourceDate)}</td><td>${ranks}</td><td>${r.sources.map(s=>esc(s.poolStatus)).join("<br>")}</td><td><a href="${researchUrl}">个股研究</a></td></tr>`;
   }).join("") || '<tr><td colspan="7" class="v45-empty">当前筛选没有候选；请确认来源状态，不将空展示解释为策略淘汰。</td></tr>';
   const totalPages = Math.max(1,Math.ceil(filtered.length/pageSize));
