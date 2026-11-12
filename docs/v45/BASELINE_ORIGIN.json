@@ -1,0 +1,116 @@
+{
+  "schema": "v45.upgrade_source_origin.v1",
+  "prepared_at": "2026-11-12T16:36:16.248189+00:00",
+  "source_repository": "https://github.com/lexi2016/v4",
+  "source_commit": "60457d189b130a7050942addee60d7e694d57b15",
+  "source_code_commit": "bb0de9311b82e0c3f749be3dc7e450bd57524131",
+  "source_review_tree": "4052e2177c059436e05c130ff5345804b8ea33f0",
+  "destination_repository": "https://github.com/lexi2016/v4.5",
+  "history": "clean snapshot; upstream commit remains in original repository",
+  "selected_role_references": 3053,
+  "unique_role_repository_targets": 1746,
+  "all_role_target_sha_match": true,
+  "copied_files": 3162,
+  "exclusions": [
+    {
+      "path": "old-data/.import.lock.mutex",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/a_d1_fupan_watchlist_pool.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/a_d1_premarket_pool.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/a_d1_stage7_fenshi_review_pool.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/a_share_baimao_research_map.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/a_share_research_recommendation_pool.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/manifest.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/receipts/a_d1_fupan_watchlist_pool.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/receipts/a_d1_premarket_pool.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/receipts/a_d1_stage7_fenshi_review_pool.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/receipts/a_share_baimao_research_map.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/receipts/a_share_research_recommendation_pool.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/receipts/wechat_public_account_v3_preselect.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "old-data/preselection_pools/20260911/wechat_public_account_v3_preselect.json",
+      "reason": "obsolete runtime pool/data/lock"
+    },
+    {
+      "path": "upstreams/v3.5",
+      "reason": "machine-local symlink; original binding retained in provenance",
+      "target": "/Users/lexi/Library/Application Support/com.lexi.v35.local/releases/20260818T140000Z-v35-stage-input-owner/app/upstreams/v3.5"
+    },
+    {
+      "path": "v3_shared_data",
+      "reason": "machine-local symlink; original binding retained in provenance",
+      "target": "upstreams/v3_shared_data"
+    },
+    {
+      "path": "verification/formula_margin_shadow_v1/chat_feedback_20260919/V4_FORMULA_SHADOW_CHAT_FEEDBACK.zip",
+      "reason": "historical feedback archive; original retained in v4"
+    },
+    {
+      "path": "verification/formula_margin_shadow_v1/r2_1_chat_feedback_20260919/V4_FORMULA_MARGIN_SHADOW_R2_1_EXECUTION_FEEDBACK.zip",
+      "reason": "historical feedback archive; original retained in v4"
+    },
+    {
+      "path": "verification/formula_margin_shadow_v1/r2_2_chat_feedback_20260919/V4_FORMULA_MARGIN_SHADOW_R2_2_EXECUTION_FEEDBACK.zip",
+      "reason": "historical feedback archive; original retained in v4"
+    },
+    {
+      "path": "verification/formula_margin_shadow_v1/r2_chat_feedback_20260919/V4_FORMULA_MARGIN_SHADOW_R2_EXECUTION_FEEDBACK.zip",
+      "reason": "historical feedback archive; original retained in v4"
+    }
+  ],
+  "intentional_doc_changes": [
+    "AGENTS.md"
+  ],
+  "new_documentation": [
+    "README.md",
+    "docs/v45/IMPLEMENTATION_BRIEF.md",
+    "docs/v45/PLAN.md",
+    "docs/v45/BASELINE_ORIGIN.json",
+    "docs/v45/UPSTREAM_FILE_MANIFEST.json",
+    "docs/v45/UPSTREAM_INDEPENDENT_REVIEW.json"
+  ],
+  "business_code_changes": false,
+  "upstream_review_sha256": "2f8d186afd86e42ebd34f107ce98b7d2c098f759c4fad72dec963df14f8ff9e7",
+  "runtime_deployment": "NOT_RUN",
+  "RESEARCH_ONLY": true,
+  "production_allowed": false,
+  "buy_gate_updated": false,
+  "orders_sent": false
+}

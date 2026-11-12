@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+apps/web/dist/
+runtime-data/
+.runtime/
+artifacts/
+*.log
+.env
+.env.*
+!.env.example
+.superpowers/
+
+# Worktree container: worktrees are registered in .git/worktrees, not tracked.
+.task_worktrees/
+
+# Process evidence trees hold per-task release snapshots and large payloads.
+docs/handoffs/
+
+# Runtime research payloads, not source.
+v4/manager_workbench/research_data/
+

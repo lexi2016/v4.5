@@ -1,0 +1,152 @@
+{
+  "schema": "v4.independent_source_sync_review.v1",
+  "reviewer": "/root/full_source_sync_review",
+  "writer": "/root/full_source_sync_writer",
+  "independent_identity": true,
+  "at": "2026-11-12T23:22:46.712672+08:00",
+  "verdict": "REVIEWED/PASS",
+  "scope": "Frozen current selected source review baseline and staged public-branch synchronization eligibility; not deployment or new business/model/PIT acceptance",
+  "frozen_handoff_sha256": "bab94ad386af0f9c66442ab211942dea016a5ce19df97f637bfe40b3faa98474",
+  "index_tree": "4052e2177c059436e05c130ff5345804b8ea33f0",
+  "base_commit": "b4719b0f36fcaec237f34c88aaab56a6996a0296",
+  "merge_parent": "13d0523fc3311ae370b7441747de9c2b5b2a49e3",
+  "branch": "codex/full-source-baseline-20261112",
+  "worktree": "/Users/lexi/.codex/worktrees/full-source-baseline-20261112/v4_app",
+  "findings": [],
+  "risk_findings": {
+    "P0": [],
+    "P1": [],
+    "P2": []
+  },
+  "independent_checks": {
+    "frozen_handoff_and_tree_identity": "PASS",
+    "unstaged_and_unmerged": "NONE",
+    "all_1336_delta_before_after_inventory_paths": "PASS; git --no-renames list matches exactly; default rename detection paired deleted obsolete backup with an added exact-source overlay, not an omission",
+    "role_source_sha_and_staged_blobs": {
+      "status": "PASS",
+      "references": 3053,
+      "unique_repository_targets": 1746,
+      "actual_source_drift": 0,
+      "staged_blob_drift": 0
+    },
+    "manifest_partition_and_actual_source_directories": {
+      "Main": {
+        "selected": 888,
+        "excluded": 151,
+        "manifest": 1039,
+        "unmapped_code": 0
+      },
+      "API": {
+        "selected": 1174,
+        "excluded": 190,
+        "manifest": 1364,
+        "unmapped_code": 0
+      },
+      "Stage": {
+        "selected": 870,
+        "excluded": 135,
+        "manifest": 1005,
+        "unmapped_code": 0
+      },
+      "SharedPackage": {
+        "selected": 66,
+        "excluded": 36,
+        "unmapped_code": 0
+      }
+    },
+    "APIResearchUI": {
+      "selected": 52,
+      "excluded": 438,
+      "actual_asset_manifest_total": 490,
+      "manifest_sha_and_partition": "PASS",
+      "selected_suffixes": [
+        ".js",
+        ".mjs",
+        ".css",
+        ".html"
+      ],
+      "generated_research_payload_in_selected": false
+    },
+    "role_matrix_shards_below_1MiB": "PASS",
+    "canonical_pending": {
+      "exact_original_bytes": 14,
+      "LF_only_derivations": 4,
+      "explicit_test_expectation_update": 1,
+      "canonical_original_sha_drift": 0
+    },
+    "branch_mapping": {
+      "root_exact_rows_verified": 288,
+      "exact_role_variants": 3,
+      "historical_documents_kept_at_original_branch": 4,
+      "superseded_current_storage_governance_exact_13d_parent": true
+    },
+    "new_payload_sensitive_scan": {
+      "payload_files": 1335,
+      "candidate_signatures": 8,
+      "confirmed_credentials": 0,
+      "classification": "5 URL-userinfo rejection fixtures, 2 quoted-secret redaction fixtures, 1 prose authorization field; inspected contexts",
+      "forbidden_payload_paths": 0,
+      "new_files_above_1MiB": 0,
+      "csv_payload": "Static formula field contract header; not market rows"
+    },
+    "new_materializer": {
+      "default_readonly_run_exit": 0,
+      "status": "SOURCE_HASHES_MATCH",
+      "unknown_role_exit": 2,
+      "business_code_executed": false
+    },
+    "authored_entry_materializer_and_fixture_diffcheck": "PASS"
+  },
+  "content_sample": {
+    "selection": "Direct integration boundaries: pending fixtures/ownership expectations, read-only research lane imports/UI, preselection publication safety, external editable workbench assets and role-specific dependencies",
+    "checks": "Compare actual diffs and origin bytes, retained assertions, exact dates/market/safety flags, required sibling-isolation regressions, source/data exclusions and path/hash verification",
+    "pass_condition": "No dropped selected source, weakened required assertion, introduced semantic rewrite, sensitive payload, missing mapped dependency or contradiction of source-review-only target",
+    "result": "PASS within this frozen source-sync scope; no exhaustive new semantic certification of existing variants",
+    "specific_evidence": [
+      "tests/test_preselection_empty_sibling_publication_20261112.py:58-64 only adds manifest/receipt identity to fake verified reader relative to 13d parent; all empty/sibling/A-HK/241-row/safety assertions remain",
+      "tests/test_v4_review_core_ownership.py:17-55 exact closure sizes/hash/union assertions remain; changed expected source bytes independently match both canonical base and 13d parent for hk_review, hk_sources and pool_store",
+      "apps/api/v35_api/research_lane_router.py:313-349 new machine-card/clue routes are reads, validate exact date and set no-store; sources and tests present",
+      "ops/_run_review_core_natural_pool_pipeline_parts/cli.py:295-312 preserves explicit shared dependency root in subprocess PYTHONPATH",
+      "docs/source-baseline-20261112/materialize_sources.py checks role-matrix SHA, source SHA, safe relative paths and new external output before writes",
+      "V4_SOURCE_ENTRY.md explicitly separates candidate/current-role bytes, reconstruction, deployment and CANNOT_CONFIRM limitations"
+    ]
+  },
+  "reused_targeted_acceptance_evidence": {
+    "backend": "Original progress independently counted 226 pass/21 fail/2 skip; subsequent failed-only logs show 7 pass, then 1 pass, then 13 pass, with unsuccessful temp-root attempts retained. Effective 247 pass/2 skip; no full rerun.",
+    "frontend": "Read vitest log 48 passed, typecheck command receipt and log, candidate/API build logs. Candidate bundle differs from active role by design; API reconstructed main-DCRf2b-t.js matches recorded active SHA.",
+    "node": "Writer command/result receipt reports 4 workbench-symbol tests passed; not independently re-executed.",
+    "syntax": "SOURCE_SYNTAX.json records 1482 pre-alias path compiles without failures; RESEARCH_UI_SYNTAX.json records 38 files without failures. Writer final 1432-unique count not independently recounted; no business behavior claim follows from syntax checks.",
+    "frontend_active_identity": "Controller FRONTEND_BUILD_IDENTITY.json records active API release/manifest and bundle SHA 6cc9739e0a88c618c7ee412162a09cab1dda070b57ff4a2b6a6f4c87f5f8a675; reviewer checked consistency, did not repeat live API read."
+  },
+  "BEHAVIOR_VERIFIED": [
+    "New materializer default read-only SHA validation succeeds for six roles",
+    "New materializer rejects unknown role before output"
+  ],
+  "CANNOT_CONFIRM": [
+    "A single commit directly deploys current Main/API/Stage or runtime environment/owner configuration/data from GitHub alone",
+    "New end-to-end live API/UI business, production, PIT or natural-market acceptance",
+    "Independent execution of Writer backend/frontend/Node/syntax suites; existing evidence was reviewed and reused",
+    "Remote commit identity and file SHA verification before controller commit/push"
+  ],
+  "not_run": [
+    "Commit/push/merge",
+    "Deployment/service or scheduler actions",
+    "Live API/UI business actions",
+    "Natural market acceptance",
+    "Training/backtest/acquisition"
+  ],
+  "source_branch_upload_eligibility": "PASS for this frozen staged tree on existing authorized work branch and repository visibility; controller must complete commit/push and remote identity readback",
+  "RESEARCH_ONLY": true,
+  "production_allowed": false,
+  "buy_gate_updated": false,
+  "orders_sent": false,
+  "source_files_edited_by_reviewer": false,
+  "evidence_hashes": {
+    "SCOPE.json": "3f902b5fecd9f6cb2f647ed2a28be9587d1a318246d766f163ebb0a68fe979e8",
+    "writer/CANDIDATE_FILES.json": "49509f7d98ce4af9c5b68b4528bfc669b36f6a84cedf6a10c2378748a460f247",
+    "writer/COMMANDS_AND_RESULTS.json": "2c203adaea67fa13e9b05b341f71fe65f33d3b004aa8ef6a164e3da57ef4ce22",
+    "writer/OWNERSHIP_EXPECTATION_ADJUSTMENTS.json": "168b48c996c4ccd8cac783d3e12c4b6ec6607b3457b7ef314e5f733601eb756f",
+    "writer/SENSITIVE_SCAN_FINAL.json": "fdac79d8406777fd81f3a066af10d94c5ce033661dd30433964f983eae70d3ae",
+    "FRONTEND_BUILD_IDENTITY.json": "ef48bb2ad82c54f052e9f3f76d2d14678b5a8f7dba8dcfe36ca0e5094aab13de"
+  }
+}
