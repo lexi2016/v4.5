@@ -43,7 +43,7 @@ jobs:
       - run: node --check v45/selection/main.js
       - run: node --check v45/research/main.js
       - run: node --check v45/review/main.js
-      - run: node --test v45/shared/data.node.test.mjs v45/entry-nav.node.test.mjs
+      - run: node --test v45/shared/data.contract-check.mjs v45/entry-nav.contract-check.mjs
       - name: Existing full web suite (baseline failures remain visible)
         run: npm test
         continue-on-error: true
