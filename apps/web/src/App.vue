@@ -189,9 +189,6 @@ const {
       <button :class="{ active: closeReviewActive && reviewFocus === 'A' }" :aria-pressed="closeReviewActive && reviewFocus === 'A'" type="button" @click="loadCloseReview('A')">A股复盘</button>
       <button class="entry-nav-link" :class="{ active: closeReviewActive && reviewFocus === 'research' }" :aria-pressed="closeReviewActive && reviewFocus === 'research'" type="button" @click="loadCloseReview('research')">研究复盘</button>
       <a class="entry-nav-link" href="http://127.0.0.1:8910/a-share/review" target="_blank" rel="noopener noreferrer">原版 Vibe · 8910</a>
-      <a class="entry-nav-link" href="/v45/selection/">今日选股</a>
-      <a class="entry-nav-link" href="/v45/research/">个股研究</a>
-      <a class="entry-nav-link" href="/v45/review/">复盘验证</a>
     </nav>
     <p v-if="navigationStatus" class="navigation-status" role="status">{{ navigationStatus }}</p>
 
