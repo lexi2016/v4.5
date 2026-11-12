@@ -2,17 +2,47 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { StageSummary } from "../components/review/StageSummaryPanel.vue";
 import { loadReview } from "../api/review";
-import { loadPoolSnapshot, loadStageSnapshot, POOL_PAGE_SIZE } from "../api/pool_stage";
+import { loadPoolSnapshot, loadStageSnapshot, loadStageTimelineBatch, projectSummaryPoolPage, POOL_PAGE_SIZE } from "../api/pool_stage";
 import type { ReviewEnvelope } from "../contracts/review";
 import type { DateResponse, ModelSelectionReview, NavigationUrlState, PoolGroup, PoolResponse, StageRow, StageTimelineSnapshot, StageWorkbench } from "./types";
 
-import { poolRows, poolEvidenceReason, poolEvidenceDetails, poolRowCode, poolRowName, poolRowSource, poolRowSourceLane, poolCountLabel, poolRowSignalDate, formatPercent, assertExactResponseDate, formatDateInput, compactDateInput, evidenceValue, rowCode, rowName, rowRank, aShareChangePct, rowSupport, rowPressure, rowInvalidation, rowNextEvidence, rowScore, qualityScore, stageCountText, stageMarketCountText, hasExactMissingStageReceipt, exactMissingStageReceiptMessage, is0920D1ReferenceRow, hkChangeLabel, rowMissingFields, hitTop20, reviewClassification } from "./formatters";
-import { createTimeline } from "./timeline";
+import { poolRows, poolEvidenceReason, poolEvidenceDetails, poolRowCode, poolRowName, poolRowSource, poolRowSourceLane, poolCountLabel, poolRowSignalDate, formatPercent, assertExactResponseDate, formatDateInput, compactDateInput, evidenceValue, rowCode, rowName, rowRank, aShareChangePct, rowSupport, rowPressure, rowInvalidation, rowNextEvidence, rowScore, qualityScore, stageCountText, stageMarketStateText, stageMarketCountText, hasExactMissingStageReceipt, exactMissingStageReceiptMessage, is0920D1ReferenceRow, hkChangeLabel, rowMissingFields, hitTop20, reviewClassification } from "./formatters";
+import { createTimeline, projectClosingTimeline, nextClosingStatusDelay } from "./timeline";
+import { loadTaskStatus } from "../api/runtime";
+import { frontendBuildIdentity, loadedFrontendScript } from './buildIdentity';
+import type { TaskStatusResponse } from "../contracts/runtime";
 
 export function useAppShell() {
-  const { stageDefinitions, closingTimeline } = createTimeline();
+  const { stageDefinitions, closingTimeline: closingDefinitions } = createTimeline();
+  const closingStatus = ref<TaskStatusResponse | null>(null);
+  const closingTimeline = computed(() => projectClosingTimeline(closingDefinitions, closingStatus.value, selectedDate.value));
+  let closingRequestVersion = 0;
+  let closingController: AbortController | null = null;
+  let closingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  async function loadClosingStatus() {
+    const version = ++closingRequestVersion;
+    closingController?.abort();
+    if (closingRefreshTimer !== null) clearTimeout(closingRefreshTimer);
+    closingRefreshTimer = null;
+    closingStatus.value = null;
+    if (!/^\d{8}$/.test(selectedDate.value)) return;
+    const date = selectedDate.value;
+    closingController = new AbortController();
+    try {
+      const result = await loadTaskStatus(date, closingController.signal);
+      if (version === closingRequestVersion && selectedDate.value === date && result.business_date === date) {
+        closingStatus.value = result;
+        const delay = nextClosingStatusDelay(result, date);
+        if (delay !== null) closingRefreshTimer = setTimeout(() => { void loadClosingStatus(); }, delay);
+      }
+    } catch {
+      // Missing/failed evidence remains CANNOT_CONFIRM for this date.
+    }
+  }
 
 
+// A date in a shared deep link is an explicit query; routine navigation follows today.
+const fixedDate = ref(/^\d{8}$/.test(new URLSearchParams(window.location.search).get("date") || ""));
 const selectedDate = ref("");
 const dateData = ref<DateResponse>({ default_date: "", stage_dates: [], future_target_dates: [] });
 const pool = ref<PoolResponse | null>(null);
@@ -22,8 +52,10 @@ let requestVersion = 0;
 let poolRequestController: AbortController | null = null;
 let loadedPoolDate = "";
 const poolPageOffset = ref(0);
+let firstPoolPage: PoolResponse | null = null;
 watch(selectedDate, (date, previousDate) => {
   if (previousDate && date !== previousDate) poolPageOffset.value = 0;
+  void loadClosingStatus();
 }, { flush: "sync" });
 const selectedStage = ref(stageDefinitions[0].id);
 const stageWorkbench = ref<StageWorkbench | null>(null);
@@ -33,9 +65,11 @@ const stageSnapshots = ref<Record<string, StageTimelineSnapshot>>({});
 const stageRunStatus = ref("");
 const navigationStatus = ref("");
 const taskStatusActive = ref(false);
+const sopActive = ref(false);
 const researchActive = ref(false);
 const researchArchiveEntry = ref(false);
 const closeReviewActive = ref(false);
+const aTop200Active = ref(false);
 const reviewFocus = ref<"A" | "HK" | "research">("HK");
 const reviewTitle = computed(() => ({ A: "A股复盘", HK: "16:10 港股通模型选股收盘复盘", research: "研究复盘" })[reviewFocus.value]);
 const runtimeLabel = computed(() => {
@@ -44,6 +78,14 @@ const runtimeLabel = computed(() => {
     ? `V4 · ${identity.release_id} · manifest/执行文件已核验`
     : "V4 · 运行版本 CANNOT_CONFIRM";
 });
+const frontendIdentity = ref({status:'CANNOT_CONFIRM',message:'前端构建身份待确认'});
+async function loadFrontendIdentity() {
+  try {
+    const response=await fetch('/api/v4/runtime-graph/frontend-build',{cache:'no-store'});
+    frontendIdentity.value=frontendBuildIdentity(loadedFrontendScript,response.ok?await response.json():null);
+  } catch { frontendIdentity.value=frontendBuildIdentity(loadedFrontendScript,null); }
+}
+function refreshFrontend() { window.location.reload(); }
 const closeReviewLoading = ref(false);
 const closeReviewError = ref("");
 const closeReviewPayload = ref<ReviewEnvelope | null>(null);
@@ -55,6 +97,7 @@ let stageTimelineRequestController: AbortController | null = null;
 let userDateIntentVersion = 0;
 let userStageIntentVersion = 0;
 
+const todayDate = computed(() => dateData.value.system_date || dateData.value.navigation_date || dateData.value.default_date || "");
 const dateOptions = computed(() =>
   [...new Set([
     ...(dateData.value.dates ?? []),
@@ -63,6 +106,7 @@ const dateOptions = computed(() =>
     ...(dateData.value.review_dates ?? []),
     ...(dateData.value.research_dates ?? []),
     ...(dateData.value.hk_observation_only_dates ?? []),
+    todayDate.value,
     dateData.value.navigation_date,
     dateData.value.default_date,
   ].filter((date): date is string => Boolean(date)))].sort(),
@@ -74,6 +118,7 @@ const tradingDateOptions = computed(() =>
     ...dateData.value.stage_dates,
     ...(dateData.value.review_dates ?? []),
     ...(dateData.value.hk_observation_only_dates ?? []),
+    todayDate.value,
     dateData.value.navigation_date,
     dateData.value.default_date,
   ].filter((date): date is string => Boolean(date)))].sort(),
@@ -102,14 +147,15 @@ const nextHkTargetDate = computed(() => {
 const selectedDateContext = computed(() => {
   if (!selectedDate.value) return "请选择交易日。";
   const formattedDate = formatDateInput(selectedDate.value);
-  if (researchActive.value) return `当前查看研究自然日：${formattedDate}`;
+  if (selectedDate.value === todayDate.value) return `今日：${formattedDate} · ${fixedDate.value ? "固定日期查询" : "跟随上海当日"}`;
+  if (researchActive.value) return `查看研究自然日：${formattedDate}`;
   if ((dateData.value.future_target_dates ?? []).includes(selectedDate.value)) {
     const targetLabel = selectedDate.value === nextFutureTargetDate.value
       ? "次日预选池准备（未开盘）"
       : "未来目标日预选池准备（未开盘）";
     return `当前查看目标日：${formattedDate} · ${targetLabel}`;
   }
-  return `当前查看交易日：${formattedDate}`;
+  return `查看历史：${formattedDate}`;
 });
 const isHkObservationOnlyDate = computed(() =>
   Boolean(dateData.value.hk_observation_only_dates?.includes(selectedDate.value)),
@@ -179,6 +225,7 @@ const preselectionGroups = computed(() => {
       market: "A",
       status: pool.value?.data_status,
       complete: pool.value?.a_all_pool_complete,
+      has_more: pool.value?.pagination?.arrays?.a_all_pool_rows?.has_more,
       pool_size: pool.value?.market_totals?.A ?? pool.value?.a_all_pool_rows?.length ?? 0,
       returned_rows: pool.value?.a_all_pool_rows?.length ?? 0,
       rows: pool.value?.a_all_pool_rows ?? [],
@@ -219,8 +266,7 @@ const v11OpeningFilter = computed(() =>
 );
 const phaseStatus = computed(() => {
   if (referenceMode.value) return "参考快照";
-  if (stageWorkbench.value?.selected_total_rows) return "观察材料已生成";
-  return "数据待补齐";
+  return `A ${stageMarketStateText(stageWorkbench.value, "A")} / HK ${stageMarketStateText(stageWorkbench.value, "HK")}`;
 });
 const stageSummary = computed<StageSummary | null>(() => {
   const workbench = stageWorkbench.value;
@@ -239,6 +285,8 @@ const stageSummary = computed<StageSummary | null>(() => {
       : workbench.selected_a_rows,
     a_source_rows: aSummary.value.source_rows,
     a_candidate_count: aSummary.value.candidate_count,
+    a_market_state_label: stageMarketStateText(workbench, "A"),
+    hk_market_state_label: stageMarketStateText(workbench, "HK"),
     selected_hk_rows: workbench.selected_hk_rows,
     hk_candidate_count: hkSummary.value.candidate_count,
     reference_mode: referenceMode.value,
@@ -248,6 +296,8 @@ const stageSummary = computed<StageSummary | null>(() => {
 });
 const aSummary = computed(() => stageWorkbench.value?.markets?.A ?? {});
 const hkSummary = computed(() => stageWorkbench.value?.markets?.HK ?? {});
+const aMarketStateText = computed(() => stageMarketStateText(stageWorkbench.value, "A"));
+const hkMarketStateText = computed(() => stageMarketStateText(stageWorkbench.value, "HK"));
 const showAStageEvidenceGap = computed(() =>
   (aSummary.value.requested_rows ?? 0) > 0
   && aSummary.value.source_rows === 0
@@ -260,7 +310,7 @@ const closeReview = computed(() =>
 const modelMetric = computed(() => closeReview.value.models?.["0.2_prob_active"] ?? {});
 const stageUnionMetric = computed(() => closeReview.value.stage_union ?? {});
 const closeReviewEvidenceLabel = computed(() => {
-  if (closeReview.value.evidence_mode === "V3_5_NATIVE_PRODUCTION") return "V3.5 原生收盘证据";
+  if (closeReview.value.evidence_mode === "V3_5_NATIVE_PRODUCTION") return "V4 原生收盘证据";
   return "收盘证据未导入";
 });
 const reviewEvidenceGaps = computed(() =>
@@ -283,7 +333,22 @@ function hkScoreLabel(row: StageRow) {
 function showNavigationStatus(label: string) {
   taskStatusActive.value = false;
   researchActive.value = false;
+  aTop200Active.value = false;
   navigationStatus.value = `${label}入口保留，业务链路仍在迁移，当前不冒充已完成。`;
+}
+function loadAShareTop200() {
+  closeReviewActive.value = false;
+  taskStatusActive.value = false;
+  researchActive.value = false;
+  navigationStatus.value = "";
+  sopActive.value = false;
+  aTop200Active.value = true;
+  writeNavigationUrl(selectedDate.value, { view: "a-top200", stage: null });
+}
+function closeAShareTop200() {
+  aTop200Active.value = false;
+  void loadPool();
+  void loadStageFromUser(selectedStage.value);
 }
 function isHistoricalTradingDate(date: string) {
   const anchor = dateData.value.navigation_date || dateData.value.default_date;
@@ -298,6 +363,7 @@ function resolveTradingDate(candidate = selectedDate.value) {
   const options = tradingDateOptions.value;
   return [
     candidate,
+    todayDate.value,
     dateData.value.navigation_date,
     dateData.value.default_date,
     ...options,
@@ -314,8 +380,10 @@ function resolveResearchDate(candidate = selectedDate.value) {
 function writeNavigationUrl(date: string, state?: NavigationUrlState) {
   if (!/^\d{8}$/.test(date)) return;
   const url = new URL(window.location.href);
-  url.searchParams.set("date", date);
+  if (fixedDate.value || date !== todayDate.value) url.searchParams.set("date", date);
+  else url.searchParams.delete("date");
   if (state && Object.prototype.hasOwnProperty.call(state, "view")) {
+    if (state.view !== "sop") sopActive.value = false;
     if (state.view) url.searchParams.set("view", state.view);
     else url.searchParams.delete("view");
   }
@@ -337,22 +405,35 @@ function bindSelectedDate(date: string, state?: NavigationUrlState) {
   if (state) writeNavigationUrl(date, state);
   else writeSelectedDateToUrl(date);
 }
+function openSop() {
+  sopActive.value = true;
+  taskStatusActive.value = false;
+  researchActive.value = false;
+  closeReviewActive.value = false;
+  aTop200Active.value = false;
+  navigationStatus.value = "";
+  bindSelectedDate(resolveTradingDate(), { view: "sop", stage: null });
+}
 function openTaskStatus() {
+  sopActive.value = false;
   taskStatusActive.value = true;
   researchActive.value = false;
   researchArchiveEntry.value = false;
   closeReviewActive.value = false;
+  aTop200Active.value = false;
   navigationStatus.value = "";
 }
 function openResearch(openWechat = false) {
   taskStatusActive.value = false;
   closeReviewActive.value = false;
+  aTop200Active.value = false;
   researchActive.value = true;
   researchArchiveEntry.value = openWechat;
   bindSelectedDate(resolveResearchDate(), { view: "research", stage: null });
   navigationStatus.value = "";
 }
 function openManagerSelection() {
+  aTop200Active.value = false;
   const suffix = /^\d{8}$/.test(selectedDate.value)
     ? `?date=${encodeURIComponent(selectedDate.value)}`
     : "";
@@ -361,6 +442,7 @@ function openManagerSelection() {
 function scrollToPool() {
   taskStatusActive.value = false;
   researchActive.value = false;
+  aTop200Active.value = false;
   bindSelectedDate(resolveTradingDate(), { view: null, stage: selectedStage.value });
   document.querySelector("#unifiedPreselectPanel")?.scrollIntoView?.({ behavior: "smooth" });
 }
@@ -368,7 +450,7 @@ function scrollToPool() {
 async function loadPool(date = selectedDate.value, offset?: number) {
   if (!date) return;
   const requestedOffset = date === loadedPoolDate ? offset ?? poolPageOffset.value : 0;
-  if (date !== loadedPoolDate) poolPageOffset.value = 0;
+  if (date !== loadedPoolDate) { poolPageOffset.value = 0; firstPoolPage = null; }
   const version = ++requestVersion;
   const requestedDate = date;
   poolRequestController?.abort();
@@ -378,10 +460,22 @@ async function loadPool(date = selectedDate.value, offset?: number) {
   pool.value = null;
   loadError.value = "";
   try {
-    const payload = await loadPoolSnapshot(requestedDate, requestedOffset, controller.signal);
+    let payload = await loadPoolSnapshot(requestedDate, requestedOffset, controller.signal);
+    if (version !== requestVersion || requestedDate !== selectedDate.value) return;
+    let settledOffset = requestedOffset;
+    if (requestedOffset > 0) {
+      const projected = projectSummaryPoolPage(firstPoolPage, payload);
+      if (projected) payload = projected;
+      else {
+        firstPoolPage = null;
+        payload = await loadPoolSnapshot(requestedDate, 0, controller.signal);
+        settledOffset = 0;
+      }
+    }
     if (version === requestVersion && requestedDate === selectedDate.value) {
+      if (settledOffset === 0) firstPoolPage = payload;
       pool.value = payload;
-      poolPageOffset.value = requestedOffset;
+      poolPageOffset.value = settledOffset;
       loadedPoolDate = requestedDate;
     }
   } catch (reason) {
@@ -421,8 +515,7 @@ function timelineStageCounts(stageId: string) {
   const snapshot = timelineStageSnapshot(stageId);
   if (!snapshot || snapshot.loading) return "读取中";
   if (snapshot.error || !snapshot.payload) return "读取失败/点击重试";
-  if (hasExactMissingStageReceipt(snapshot.payload, selectedDate.value, stageId)) return "A 待确认 / HK 待确认";
-  return `A ${stageCountText(snapshot.payload.selected_a_rows)} / HK ${stageMarketCountText(snapshot.payload.markets?.HK, snapshot.payload.selected_hk_rows)}`;
+  return `A ${stageMarketStateText(snapshot.payload, "A")} / HK ${stageMarketStateText(snapshot.payload, "HK")}`;
 }
 
 function hasStageTimelineForDate(date: string) {
@@ -447,26 +540,43 @@ async function loadStageTimeline(date: string, currentStage: string, currentPayl
   }
   stageSnapshots.value = initialSnapshots;
 
-  await Promise.all(stageDefinitions.map(async (stage) => {
-    try {
-      const payload = await loadStageSnapshot(date, stage.id, controller.signal);
-      if (version === stageTimelineRequestVersion && date === selectedDate.value) {
-        setStageTimelineSnapshot(stage.id, { date, loading: false, payload }, version);
-        if (stage.id === selectedStage.value) stageWorkbench.value = payload;
+  try {
+    const summaries = await loadStageTimelineBatch(
+      date,
+      stageDefinitions.map((stage) => stage.id),
+      controller.signal,
+    );
+    if (version === stageTimelineRequestVersion && date === selectedDate.value) {
+      const next: Record<string, StageTimelineSnapshot> = { ...initialSnapshots };
+      for (const stage of stageDefinitions) {
+        if (stage.id === currentStage && currentPayloadMatches) continue;
+        const payload = summaries[stage.id];
+        next[stage.id] = payload
+          ? { date, loading: false, payload }
+          : { date, loading: false, error: "阶段时间轴读取失败" };
       }
-    } catch (reason) {
-      if (version === stageTimelineRequestVersion && date === selectedDate.value) {
-        const message = reason instanceof Error && reason.message.includes("超时")
-          ? "阶段工作台读取超时"
-          : "阶段工作台读取失败";
-        setStageTimelineSnapshot(stage.id, { date, loading: false, error: message }, version);
-      }
+      stageSnapshots.value = next;
     }
-  }));
-  if (stageTimelineRequestController === controller) stageTimelineRequestController = null;
+  } catch (reason) {
+    if (version === stageTimelineRequestVersion && date === selectedDate.value) {
+      const message = reason instanceof Error && reason.message.includes("超时")
+        ? "阶段时间轴读取超时"
+        : "阶段时间轴读取失败";
+      const settled: Record<string, StageTimelineSnapshot> = {};
+      for (const stage of stageDefinitions) {
+        settled[stage.id] = stage.id === currentStage && currentPayloadMatches
+          ? initialSnapshots[stage.id]
+          : { date, loading: false, error: message };
+      }
+      stageSnapshots.value = settled;
+    }
+  } finally {
+    if (stageTimelineRequestController === controller) stageTimelineRequestController = null;
+  }
 }
 
 async function openNextFutureTargetPool() {
+  fixedDate.value = true;
   const targetDate = nextFutureTargetDate.value;
   if (!targetDate) return;
   const needsReload = targetDate !== selectedDate.value
@@ -477,6 +587,7 @@ async function openNextFutureTargetPool() {
   researchActive.value = false;
   researchArchiveEntry.value = false;
   closeReviewActive.value = false;
+  aTop200Active.value = false;
   navigationStatus.value = "";
   bindSelectedDate(targetDate, { view: null, stage: selectedStage.value });
   if (needsReload) await onDateChange();
@@ -484,6 +595,7 @@ async function openNextFutureTargetPool() {
 }
 
 async function openNextHkTargetPool() {
+  fixedDate.value = true;
   const targetDate = nextHkTargetDate.value;
   if (!targetDate) return;
   const needsReload = targetDate !== selectedDate.value
@@ -494,6 +606,7 @@ async function openNextHkTargetPool() {
   researchActive.value = false;
   researchArchiveEntry.value = false;
   closeReviewActive.value = false;
+  aTop200Active.value = false;
   navigationStatus.value = "";
   bindSelectedDate(targetDate, { view: null, stage: selectedStage.value });
   if (needsReload) await onDateChange();
@@ -501,6 +614,7 @@ async function openNextHkTargetPool() {
 }
 
 async function loadStage(stage = selectedStage.value, preserveRunStatus = false, syncUrl = true) {
+  void loadFrontendIdentity();
   taskStatusActive.value = false;
   researchActive.value = false;
   closeReviewActive.value = false;
@@ -556,6 +670,7 @@ async function loadStage(stage = selectedStage.value, preserveRunStatus = false,
 
 function loadStageFromUser(stage = selectedStage.value) {
   userStageIntentVersion += 1;
+  aTop200Active.value = false;
   void loadStage(stage);
 }
 
@@ -567,10 +682,15 @@ async function loadCloseReview(
   reviewFocus.value = focus;
   taskStatusActive.value = false;
   researchActive.value = false;
+  aTop200Active.value = false;
   const tradingDate = resolveTradingDate();
-  if (syncUrl) bindSelectedDate(tradingDate);
+  if (syncUrl) {
+    const view = focus === "A" ? "a-review" : focus === "research" ? "research-review" : "review";
+    bindSelectedDate(tradingDate, { view, stage: null });
+  }
   else if (tradingDate) selectedDate.value = tradingDate;
   if (!selectedDate.value) return;
+  sopActive.value = false;
   closeReviewActive.value = true;
   // Both views read the same exact envelope, but focus different preserved
   // sections. Switching labels is not a second fetch/generation operation.
@@ -604,7 +724,7 @@ async function ensureStage(force = false) {
   try {
     const query = new URLSearchParams({ date: selectedDate.value, stage: selectedStage.value });
     if (force) query.set("force", "true");
-    const response = await fetch(`/api/v3/workbench/stage/ensure?${query.toString()}`, { method: "POST" });
+    const response = await fetch(`/api/v4/workbench/stage/ensure?${query.toString()}`, { method: "POST" });
     if (!response.ok) throw new Error("request failed");
     const payload = await response.json();
     stageRunStatus.value = payload.ensure_status || "CANNOT_CONFIRM";
@@ -616,6 +736,7 @@ async function ensureStage(force = false) {
 }
 
 async function onDateChange() {
+  if (aTop200Active.value) return;
   const requestedDate = selectedDate.value;
   abortStageRequests();
   stageRequestVersion += 1;
@@ -640,8 +761,12 @@ async function onDateChange() {
 async function applyNavigationFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const requestedDate = params.get("date") || "";
+  fixedDate.value = /^\d{8}$/.test(requestedDate);
   const requestedView = params.get("view") || "";
   const requestedStage = params.get("stage") || "";
+  if (requestedView === "sop") { openSop(); return; }
+  sopActive.value = false;
+  aTop200Active.value = false;
   const previousDate = selectedDate.value;
   const previousStage = selectedStage.value;
   const previousMode = researchActive.value
@@ -677,6 +802,11 @@ async function applyNavigationFromUrl() {
     return;
   }
 
+  if (requestedView === "a-top200") {
+    selectedDate.value = resolveTradingDate(requestedDate || todayDate.value);
+    loadAShareTop200();
+    return;
+  }
   if (["review", "a-review", "research-review"].includes(requestedView)) {
     const explicitTradingDate = /^\d{8}$/.test(requestedDate)
       && (tradingDateOptions.value.includes(requestedDate) || isHistoricalTradingDate(requestedDate))
@@ -709,6 +839,14 @@ function onBrowserHistoryChange() {
   void applyNavigationFromUrl();
 }
 
+async function selectDate(date: string) {
+  if (!/^\d{8}$/.test(date)) return;
+  userDateIntentVersion += 1;
+  fixedDate.value = true;
+  selectedDate.value = date;
+  writeSelectedDateToUrl(date);
+  await onDateChange();
+}
 async function onDateInputChange(event: Event) {
   const input = event.currentTarget as HTMLInputElement;
   const compact = compactDateInput(input.value);
@@ -719,20 +857,52 @@ async function onDateInputChange(event: Event) {
     return;
   }
   input.setCustomValidity("");
-  userDateIntentVersion += 1;
-  selectedDate.value = compact;
-  writeSelectedDateToUrl(compact);
-  await onDateChange();
+  await selectDate(compact);
 }
 
+async function goToday() {
+  fixedDate.value = false;
+  userDateIntentVersion += 1;
+  await refreshNavigationDate(true);
+}
+let restoringDate = false;
+let navigationRequestVersion = 0;
+let navigationReady = false;
+async function refreshNavigationDate(force = false) {
+  if (!navigationReady || (!force && fixedDate.value) || (!force && restoringDate) || document.visibilityState === "hidden") return;
+  restoringDate = true;
+  const version = ++navigationRequestVersion;
+  const intent = userDateIntentVersion;
+  try {
+    const response = await fetch("/api/v1/runs/date-list", { cache: "no-store" });
+    if (!response.ok) return;
+    const result: DateResponse = await response.json();
+    if (version !== navigationRequestVersion || intent !== userDateIntentVersion || fixedDate.value) return;
+    dateData.value = { ...result, research_dates: [...new Set([...(result.research_dates ?? []), ...(dateData.value.research_dates ?? [])])] };
+    const date = todayDate.value;
+    if (!/^\d{8}$/.test(date)) return;
+    const changed = selectedDate.value !== date;
+    selectedDate.value = date;
+    writeSelectedDateToUrl(date);
+    if (changed || force) await onDateChange();
+  } catch { /* Keep the visible date and its gaps when the calendar is unavailable. */ }
+  finally { if (version === navigationRequestVersion) restoringDate = false; }
+}
+function onPageRestore() { void refreshNavigationDate(); }
+
 onMounted(async () => {
+  void loadFrontendIdentity();
+  const initialParams = new URLSearchParams(window.location.search);
   const dateIntentAtMount = userDateIntentVersion;
   const stageIntentAtMount = userStageIntentVersion;
   window.addEventListener("popstate", onBrowserHistoryChange);
+  window.addEventListener("focus", onPageRestore);
+  window.addEventListener("pageshow", onPageRestore);
+  document.addEventListener("visibilitychange", onPageRestore);
   try {
     const [dateList, laneDates] = await Promise.all([
       fetch("/api/v1/runs/date-list").then((r) => (r.ok ? r.json() : Promise.reject(new Error("request failed")))),
-      fetch("/api/v3/research/dates")
+      fetch("/api/v4/research/dates")
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     ]);
@@ -740,28 +910,34 @@ onMounted(async () => {
       ...dateList,
       // Merge the V3 research-module dates so the date picker can switch to
       // any available research lane date even when the local stage calendar
-      // only covers the current day (e.g. a fresh V3.5 data root).
+      // only covers the current day (e.g. a fresh V4 data root).
       research_dates: [...new Set([...(dateList.research_dates ?? []), ...((laneDates?.research_dates as string[] | undefined) ?? [])])].sort(),
     };
-    const params = new URLSearchParams(window.location.search);
-    const requestedDate = params.get("date");
-    const requestedStage = params.get("stage");
-    const requestedView = params.get("view");
+    const requestedDate = initialParams.get("date");
+    const requestedStage = initialParams.get("stage");
+    const requestedView = initialParams.get("view");
     const userSelectedDate = userDateIntentVersion !== dateIntentAtMount
       && isAllowedDateForView(selectedDate.value)
       ? selectedDate.value
       : "";
     const userSelectedStage = userStageIntentVersion !== stageIntentAtMount;
+    navigationReady = true;
     if (!userSelectedStage && requestedStage && stageDefinitions.some((stage) => stage.id === requestedStage)) {
       selectedStage.value = requestedStage;
     }
-    if (requestedView === "research") {
+    if (requestedView === "sop") {
+      selectedDate.value = userSelectedDate || resolveTradingDate(todayDate.value);
+      openSop();
+    } else if (aTop200Active.value || requestedView === "a-top200") {
+      selectedDate.value = resolveTradingDate(requestedDate || todayDate.value);
+      loadAShareTop200();
+    } else if (requestedView === "research") {
       const explicitResearchDate = requestedDate
         && /^\d{8}$/.test(requestedDate)
         && (researchDateOptions.value.includes(requestedDate) || researchDateOptions.value.length === 0)
         ? requestedDate
         : "";
-      selectedDate.value = userSelectedDate || explicitResearchDate || resolveResearchDate(dateData.value.navigation_date || dateData.value.default_date || "");
+      selectedDate.value = userSelectedDate || explicitResearchDate || resolveResearchDate(todayDate.value);
       openResearch();
     } else if (["review", "a-review", "research-review"].includes(requestedView || "")) {
       const explicitTradingDate = requestedDate
@@ -769,7 +945,7 @@ onMounted(async () => {
         && (tradingDateOptions.value.includes(requestedDate) || isHistoricalTradingDate(requestedDate))
         ? requestedDate
         : "";
-      selectedDate.value = userSelectedDate || explicitTradingDate || resolveTradingDate(dateData.value.navigation_date || dateData.value.default_date || "");
+      selectedDate.value = userSelectedDate || explicitTradingDate || resolveTradingDate(todayDate.value);
       await Promise.all([loadPool(), loadCloseReview(requestedView === "research-review" ? "research" : requestedView === "a-review" ? "A" : "HK")]);
     } else {
       const explicitTradingDate = requestedDate
@@ -777,7 +953,7 @@ onMounted(async () => {
         && (tradingDateOptions.value.includes(requestedDate) || isHistoricalTradingDate(requestedDate))
         ? requestedDate
         : "";
-      selectedDate.value = userSelectedDate || explicitTradingDate || resolveTradingDate(dateData.value.navigation_date || dateData.value.default_date || "");
+      selectedDate.value = userSelectedDate || explicitTradingDate || resolveTradingDate(todayDate.value);
       if (userSelectedDate || userSelectedStage) {
         bindSelectedDate(selectedDate.value, { view: null, stage: selectedStage.value });
       }
@@ -786,11 +962,17 @@ onMounted(async () => {
   } catch {
     loadError.value = "交易日目录读取失败。";
     stageError.value = "交易日目录读取失败。";
-  }
+  } finally { navigationReady = true; }
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("popstate", onBrowserHistoryChange);
+  window.removeEventListener("focus", onPageRestore);
+  window.removeEventListener("pageshow", onPageRestore);
+  document.removeEventListener("visibilitychange", onPageRestore);
+  closingRequestVersion += 1;
+  closingController?.abort();
+  if (closingRefreshTimer !== null) clearTimeout(closingRefreshTimer);
   requestVersion += 1;
   poolRequestController?.abort();
   poolRequestController = null;
@@ -801,6 +983,7 @@ onBeforeUnmount(() => {
   return {
     stageDefinitions,
     closingTimeline,
+    loadClosingStatus,
     poolRows,
     poolEvidenceReason,
     poolEvidenceDetails,
@@ -825,6 +1008,8 @@ onBeforeUnmount(() => {
     qualityScore,
     stageCountText,
     stageMarketCountText,
+    aMarketStateText,
+    hkMarketStateText,
     missingStageReceiptMessage,
     hasMissingStageReceipt,
     hkChangeLabel,
@@ -832,6 +1017,10 @@ onBeforeUnmount(() => {
     hitTop20,
     reviewClassification,
     selectedDate,
+    goToday,
+    selectDate,
+    todayDate,
+    fixedDate,
     pool,
     poolPageOffset,
     aPoolPageLabel,
@@ -846,12 +1035,17 @@ onBeforeUnmount(() => {
     stageRunStatus,
     navigationStatus,
     taskStatusActive,
+    sopActive,
+    openSop,
     researchActive,
     researchArchiveEntry,
     closeReviewActive,
+    aTop200Active,
     reviewFocus,
     reviewTitle,
     runtimeLabel,
+    frontendIdentity,
+    refreshFrontend,
     closeReviewLoading,
     closeReviewError,
     closeReviewPayload,
@@ -886,6 +1080,8 @@ onBeforeUnmount(() => {
     hkChangeValue,
     hkScoreLabel,
     showNavigationStatus,
+    loadAShareTop200,
+    closeAShareTop200,
     openTaskStatus,
     openResearch,
     openManagerSelection,

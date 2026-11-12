@@ -178,11 +178,11 @@ describe("ReviewView", () => {
     expect(screen.queryByText("未命中")).toBeNull();
   });
 
-  it("puts the 16:10 HK close review before the secondary A review", () => {
+  it("puts the 16:08 HK close review before the secondary A review", () => {
     const { container } = render(ReviewView, { props: { payload } });
     const labels = Array.from(container.querySelectorAll("section[aria-label]"))
       .map((node) => node.getAttribute("aria-label"));
-    expect(screen.getByText("16:10 港股通正式收盘复盘")).toBeTruthy();
+    expect(screen.getByText("16:10 港股市场正式收盘复盘")).toBeTruthy();
     expect(labels.indexOf("HK close review")).toBeGreaterThanOrEqual(0);
     expect(labels.indexOf("A-share review")).toBeGreaterThanOrEqual(0);
     expect(labels.indexOf("HK close review")).toBeLessThan(labels.indexOf("A-share review"));
@@ -210,7 +210,7 @@ describe("ReviewView", () => {
             { layer: "selector", owner: "PANEL", status: "FAILED/CONTRACT", expected_date: "20260824", observed_date: "20260821", failure_class: "SELECTOR_NOT_READY", receipt_path: "data_layer/data_layer_interface_current/CURRENT_SELECTOR_READY_PANEL.txt", receipt_sha256: "", next_due: "16:05" },
             { layer: "16:05", owner: "A_SHARE_REVIEW", status: "BLOCKED/CONTRACT", expected_date: "20260824", observed_date: "20260821", failure_class: "SELECTOR_NOT_READY", receipt_path: "", receipt_sha256: "", next_due: "ReviewBundle" },
             { layer: "ReviewBundle", owner: "REVIEW_CORE", status: "NOT_MATERIALIZED", expected_date: "20260824", observed_date: "", failure_class: "UPSTREAM_SELECTOR_BLOCKED", receipt_path: "review_bundle/20260824/receipt.json", receipt_sha256: "", path: "review_bundle/20260824/current.json", next_due: "API/UI" },
-            { layer: "API/UI", owner: "V3.5_REVIEW", status: "EVIDENCE_GAP", expected_date: "20260824", observed_date: "", failure_class: "REVIEW_BUNDLE_NOT_MATERIALIZED", receipt_path: "review_bundle/20260824/receipt.json", receipt_sha256: "", path: "/api/v3/review?date=20260824", next_due: "NATURAL_SLOT" },
+            { layer: "API/UI", owner: "V4_REVIEW", status: "EVIDENCE_GAP", expected_date: "20260824", observed_date: "", failure_class: "REVIEW_BUNDLE_NOT_MATERIALIZED", receipt_path: "review_bundle/20260824/receipt.json", receipt_sha256: "", path: "/api/v4/review?date=20260824", next_due: "NATURAL_SLOT" },
           ],
         },
       },
@@ -265,12 +265,12 @@ describe("manual exact-date research generation", () => {
     await fireEvent.click(button);
     await fireEvent.click(button);
     expect(request).toHaveBeenCalledTimes(1);
-    expect(request.mock.calls[0][0]).toBe("/api/v3/review/generate");
+    expect(request.mock.calls[0][0]).toBe("/api/v4/review/generate");
     expect(JSON.parse(request.mock.calls[0][1].body)).toEqual({ date: "20260730" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     release({ ok: true, json: async () => ({ status: "READY_FOR_REVIEW", trade_date: "20260730" }) });
     await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
-    expect(request.mock.calls[1][0]).toBe("/api/v3/review?date=20260730");
+    expect(request.mock.calls[1][0]).toBe("/api/v4/review?date=20260730");
     await waitFor(() => expect(screen.getByText("所选日期复盘已刷新。" )).toBeTruthy());
   });
 

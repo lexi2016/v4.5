@@ -12,7 +12,7 @@ export type StageDefinition = { id: string; label: string; timeline: string };
 
 export type DateResponse = {
   default_date: string; stage_dates: string[]; review_dates?: string[]; research_dates?: string[]; future_target_dates: string[];
-  dates?: string[]; navigation_date?: string; navigation_timezone?: string;
+  dates?: string[]; system_date?: string; navigation_date?: string; navigation_timezone?: string;
   hk_observation_only_dates?: string[];
   runtime_identity?: { status: string; release_id: string; process_status: string };
 };
@@ -39,6 +39,7 @@ export type PoolPagination = {
   pools?: Record<string, PoolPageEntry>;
 };
 export type PoolResponse = {
+  input_fingerprint?: string;
   trade_date?: string; requested_date?: string; selected_date?: string;
   data_status: string; rows: PoolRow[]; a_all_pool_rows?: PoolRow[];
   a_all_pool_row_count?: number; a_source_only_row_count?: number; unified_row_count?: number;
@@ -160,10 +161,31 @@ export type StageLineage = {
   recovery?: StageLineageBranch;
   cannot_confirm?: string[];
 };
+export type StageTimelinePayload = {
+  schema_version?: string;
+  trade_date?: string;
+  stage_id?: string;
+  status?: string;
+  stage: StageWorkbench["stage"];
+  markets?: { A?: MarketSummary; HK?: MarketSummary };
+  execution_evidence?: StageExecutionEvidence;
+  selected_a_rows: number;
+  selected_hk_rows: number | null;
+  selected_total_rows?: number | null;
+  selection_mode?: string;
+  snapshot_reselection?: {
+    status?: string;
+    markets?: { A_SHARE?: { mode?: string; selected_rows?: number; captured_at?: string } };
+  } | null;
+  snapshot_recovery?: {
+    status?: string;
+    markets?: { A_SHARE?: { mode?: string; observed_rows?: number; captured_at?: string } };
+  } | null;
+};
 export type StageTimelineSnapshot = {
   date: string;
   loading: boolean;
-  payload?: StageWorkbench;
+  payload?: StageTimelinePayload;
   error?: string;
 };
 export type ReviewMetric = ContractReviewMetric;

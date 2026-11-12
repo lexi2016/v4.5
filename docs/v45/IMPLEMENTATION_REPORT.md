@@ -2,7 +2,7 @@
 
 - Branch: `codex/v45-parallel-p0-20261113`
 - Base: `530beea8f3c3edd082d777cbe316b4b0322080ee`
-- Scope: additive V4.5 MPA pages; existing V4 navigation and behavior retained.
+- Scope: additive V4.5 MPA pages; exact API-role homepage source and dependencies materialized into editable candidate paths.
 - Safety: `RESEARCH_ONLY=true`, `production_allowed=false`, `buy_gate_updated=false`, `orders_sent=false`.
 
 ## Additive entry points
@@ -14,7 +14,8 @@
 
 ## Source/data decisions
 
-- The API-role `index.html` source from the role matrix is the Vite entry. The SHA-pinned App.vue role overlay is not edited in place. A small idempotent DOM adapter appends the three links immediately after the existing Vibe 8910 link; the original App.vue and all legacy buttons, URLs and default behavior remain untouched.
+- The API-role App.vue and its imported view/API/contracts/component dependency variants are copied from the SHA-pinned API role matrix into their normal editable paths. The frozen SHA-named overlays are not edited. API-role App, ResearchView, ReviewView and TaskStatusView dependencies are aligned; role-specific App/Research/Review tests are also materialized.
+- The API-role V4 index HTML is used as the Vite entry. A small idempotent DOM adapter appends the three links immediately after the existing Vibe 8910 link. It preserves all legacy navigation items, buttons, URLs and default behavior.
 - The adapter tolerates Vue rerenders and does not create a second navigation or route.
 - Vite gains three MPA inputs; existing inputs remain.
 - The real 2026-11-13 Drive delta ZIP was SHA-256 verified locally. The complete ZIP, raw candidate CSVs and large API responses are not committed. Only the sanitized 118-row formula-comparison fixture and contract tests are included.
@@ -27,7 +28,7 @@
 - Node contract checks cover market-qualified identity, A/HK API symbol mapping, multi-page deduplication, source membership preservation, optional Stage7 isolation, pagination gaps, exact date validation, frozen formula row integrity and nav insertion/idempotency.
 - CI runs Node syntax checks, targeted contract checks, existing full web suite, Vue typecheck and Vite build.
 - Baseline full web-suite failures are compared against the fixed source baseline; they are reported separately and are not treated as new-feature test passes.
-- Independent review pass checked exact API-role HTML entry, SHA-pinned App.vue non-modification, no raw pool upload, source/date identity, pagination chain, market separation, failure isolation and read-only behavior.
+- Separate source review checked exact API-role source mapping, preserved Vibe navigation, no raw pool upload, source/date identity, pagination chain, market separation, failure isolation and read-only behavior.
 
 ## Deployment and production
 
