@@ -61,7 +61,7 @@ test("formula comparison is frozen, date-scoped and not inferred for HK",()=>{
 });
 
 test("sanitised frozen formula comparison fixture retains exact per-stock evidence", async () => {
-  const compressed = readFileSync(new URL("./formula-comparison.v1.bin", import.meta.url));
+  const compressed = readFileSync(new URL("../../public/v45/shared/formula-comparison.v1.bin", import.meta.url));
   const fixture = JSON.parse(gunzipSync(compressed).toString("utf8"));
   assert.equal(fixture.schema_version,"v45.frozen_formula_comparison.v1");
   assert.equal(fixture.status,"FROZEN_SOURCE_DATA_NOT_RECALCULATED");
