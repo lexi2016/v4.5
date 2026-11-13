@@ -1,0 +1,36 @@
+name: V45 isolated audit inputs
+on:
+  push:
+    branches: [codex/v45-parallel-p0-20261113]
+    paths: [.github/workflows/v45-offline-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit-inputs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare tracked source and locked test dependencies only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v45-audit
+          git archive HEAD | gzip -n > /tmp/v45-audit/source.tar.gz
+          git archive 530beea8f3c3edd082d777cbe316b4b0322080ee | gzip -n > /tmp/v45-audit/baseline.tar.gz
+          npm ci --prefix apps/web --ignore-scripts --no-audit --no-fund
+          tar -czf /tmp/v45-audit/test-dependencies.tar.gz -C apps/web node_modules
+          git rev-parse HEAD > /tmp/v45-audit/HEAD.txt
+          sha256sum /tmp/v45-audit/*.tar.gz > /tmp/v45-audit/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v45-isolated-audit-inputs
+          path: /tmp/v45-audit/
+          retention-days: 1
+          if-no-files-found: error
