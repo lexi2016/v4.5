@@ -35,8 +35,8 @@ const slotMatrix = slots.map((slot) => {
 const readyWithGap = {
   schema_version: "v3_5.research_day_product.v1",
   contract_id: "v3_5.research_day_product.v1",
-  workflow_name: "V35_DAILY_RESEARCH_AUTHORITY_V1",
-  pass_signal: "V35_DAILY_RESEARCH_AUTHORITY_PASS_V1",
+  workflow_name: "V4_DAILY_RESEARCH_AUTHORITY_V1",
+  pass_signal: "V4_DAILY_RESEARCH_AUTHORITY_PASS_V1",
   archive_date: "20260824",
   requested_date: "20260824",
   resolved_date: "20260824",
@@ -208,7 +208,7 @@ describe("DailyResearchCommandView", () => {
     expect(await screen.findByText("READY_WITH_DECLARED_GAPS")).toBeTruthy();
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
       "/api/v1/runs/date-list",
-      "/api/v3/research/day?archive_date=20260824",
+      "/api/v4/research/day?archive_date=20260824",
     ]);
     expect(window.location.search).toBe("?date=20260824");
   });
@@ -232,7 +232,7 @@ describe("DailyResearchCommandView", () => {
     const { container } = render(DailyResearchCommandView);
 
     expect(await screen.findByText("READY_WITH_DECLARED_GAPS")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledWith("/api/v3/research/day?archive_date=20260824");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v4/research/day?archive_date=20260824");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls.flat().join(" ")).not.toContain("/articles");
     expect(fetchMock.mock.calls.flat().join(" ")).not.toContain("hourly");

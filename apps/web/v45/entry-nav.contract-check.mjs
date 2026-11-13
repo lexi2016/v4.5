@@ -17,6 +17,7 @@ test("V4.5 nav is appended after Vibe 8910, preserves legacy links and is idempo
     assert.equal(nav.querySelectorAll("[data-v45-entry]").length, 3);
     assert.equal(nav.querySelector('a[href="/legacy"]')?.textContent, "旧入口");
   } finally {
+    dom.window.__v45EntryNavObserver?.disconnect();
     dom.window.close();
     delete globalThis.window;
     delete globalThis.document;

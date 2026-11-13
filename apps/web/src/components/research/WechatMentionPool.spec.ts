@@ -44,14 +44,7 @@ describe("WechatMentionPool", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("shows the exact article-date archive with market tabs and provenance", async () => {
-    const duplicateListing = {
-      ...mention("A", "688361.SH"),
-      mapping_status: "IDENTITY_SOURCE_CODE_VISUALLY_CHECKED",
-      mapping_statuses: ["IDENTITY_SOURCE_CODE_VISUALLY_CHECKED", "IDENTITY_REFERENCE_RESOLVED"],
-      listing_origin: "SOURCE_CODE",
-      listing_origins: ["SOURCE_CODE", "NAME_RESOLVED"],
-    };
-    const fetch = vi.fn(async () => jsonResponse(response("20260920", "A", [duplicateListing])));
+    const fetch = vi.fn(async () => jsonResponse(response("20260920", "A")));
     vi.stubGlobal("fetch", fetch);
     const wrapper = mount(WechatMentionPool, { props: { articleDate: "20260920" } });
     await flushPromises();
@@ -60,8 +53,6 @@ describe("WechatMentionPool", () => {
     expect(wrapper.text()).toContain("PARTIAL_WITH_UNREADABLE");
     expect(wrapper.text()).toContain("IMAGE001");
     expect(wrapper.text()).toContain("券商署名/原文提及，不是推荐");
-    expect(wrapper.text()).toContain("IDENTITY_SOURCE_CODE_VISUALLY_CHECKED");
-    expect(wrapper.text()).toContain("IDENTITY_REFERENCE_RESOLVED");
     expect(wrapper.get('[data-testid="wechat-mention-market-A"]').attributes("aria-pressed")).toBe("true");
     expect(wrapper.get('[data-testid="wechat-mention-market-BJ"]').text()).toContain("1");
     const firstUrl = String((fetch.mock.calls as unknown[][])[0][0]);

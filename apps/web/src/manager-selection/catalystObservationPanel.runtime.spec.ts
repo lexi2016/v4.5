@@ -1,24 +1,16 @@
 import { fireEvent, waitFor } from "@testing-library/vue";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createHash } from "node:crypto";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 const workspaceMocks = vi.hoisted(() => ({
   request: vi.fn(),
   refresh: vi.fn(),
 }));
-const analysisMocks = vi.hoisted(() => ({ request: vi.fn() }));
 
 vi.mock("../api/managerWorkspace.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/managerWorkspace.js")>()),
   requestManagerWorkspace: workspaceMocks.request,
   refreshManagerWorkspace: workspaceMocks.refresh,
-}));
-vi.mock("../api/managerAnnouncementAnalysis.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../api/managerAnnouncementAnalysis.js")>()),
-  requestManagerAnnouncementAnalysis: analysisMocks.request,
 }));
 
 import { groupThemeMappings, mountCatalystObservations } from "./catalystObservationPanel";
@@ -53,27 +45,6 @@ const workspaceBase = {
   owner_chain: {},
 } as unknown as ManagerWorkspace;
 
-const dailyReview=(date:string,count=1)=>({
-  RESEARCH_ONLY:true,production_allowed:false,buy_gate_updated:false,orders_sent:false,
-  schema_version:"v4.manager_research.announcement_review.v1",target_trade_date:date,
-  daily_publication_date:date,publication_timezone:"Asia/Hong_Kong",status:"PARTIAL",count_known:true,
-  official_documents:Array.from({length:count},(_,index)=>({RESEARCH_ONLY:true,production_allowed:false,buy_gate_updated:false,orders_sent:false,
-    symbol:`HK.${String(index+1).padStart(5,'0')}`,name:`示例公司${index+1}`,title:`当天公告${index+1}`,
-    event_id:`${"c".repeat(56)}${index.toString(16).padStart(8,'0')}`,target_trade_date:date,
-    source_url:`https://www1.hkexnews.hk/listedco/listconews/sehk/${date.slice(0,4)}/${date.slice(4,8)}/notice-${index+1}.pdf`,
-    published_at:`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}T10:00:00+08:00`,
-    available_at:`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}T10:01:00+08:00`,
-    retrieved_at:`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}T10:02:00+08:00`,
-    query_cutoff:`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}T23:00:00+08:00`,
-    body_status:"BODY_UNREAD",document_sha256:"d".repeat(64),source_refs:[]})),
-  coverage:{publication_date:date,observed_document_count:count,observed_count_is_not_market_total:true,
-    source_coverage_cutoff:`${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}T23:00:00+08:00`,
-    queried_issuer_count:3,successfully_observed_issuer_count:3,failed_issuers:[],pending_issuers:[],
-    directory_exhaustion:"UNVERIFIED",all_official_announcements_captured:false,source_products:[]},
-  gaps:["OFFICIAL_DIRECTORY_SERVER_PAGINATION_EXHAUSTION_UNVERIFIED"],capture_runs:[],
-  retained_cross_day:{counts_by_publication_date:{"20260930":342},source_products:[]},
-});
-
 const strictCard: JsonObject = {
   classification: "STRICT_REBOUND", qualification_status: "RESEARCH_ONLY_CANDIDATE",
   code: "HK.02589", name: "沪上阿姨（合成案例）", target_monday: "20260921",
@@ -103,38 +74,11 @@ const workspaceWithScreen = (): ManagerWorkspace => ({
   ...workspaceBase, market_screen: twoGateScreen,
 }) as unknown as ManagerWorkspace;
 
-const readPinnedManualObservationFixture = (name: "close_recapture.json" | "close_recapture.candidates.json"): JsonObject => {
-  const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../tests/fixtures/manager_current_observation_20261002");
-  const binding = JSON.parse(readFileSync(resolve(fixtureRoot, "FIXTURE_BINDING.json"), "utf8"));
-  const bytes = readFileSync(resolve(fixtureRoot, name));
-  expect(createHash("sha256").update(bytes).digest("hex")).toBe(binding.files[name].sha256);
-  return JSON.parse(bytes.toString("utf8")) as JsonObject;
-};
-
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-  analysisMocks.request.mockReset();
-  window.history.replaceState({},"","/");
   document.body.replaceChildren();
-});
-
-beforeEach(() => {
-  analysisMocks.request.mockImplementation(async(targetDate:string,publicationDate:string|undefined)=>({
-    schema_version:"v4.manager_research.eastmoney_hk_announcement_analysis_read.v1",
-    target_trade_date:targetDate,publication_date:publicationDate
-      ?`${publicationDate.slice(0,4)}-${publicationDate.slice(4,6)}-${publicationDate.slice(6,8)}`
-      :targetDate==="20260930"?"2026-09-29":"2026-09-30",
-    date_selection_basis:publicationDate?"EXPLICIT":"PREVIOUS_HK_TRADING_SESSION",
-    source_catalog:{status:"NOT_RUN",readback_status:"NOT_RUN",directory_record_count:null},
-    analysis:{status:"NOT_IMPORTED",summary:null,records:[],gaps:["ANNOUNCEMENT_ANALYSIS_NOT_IMPORTED"]},
-  }));
-  vi.stubGlobal("fetch",vi.fn(async (input:RequestInfo|URL)=>{
-    const url=String(input);const date=new URL(url,"http://localhost").searchParams.get("date")||"20260921";
-    return {ok:true,status:200,json:async()=>dailyReview(date)} as Response;
-  }));
 });
 
 describe("catalyst workspace runtime boundary", () => {
@@ -210,164 +154,6 @@ describe("catalyst workspace runtime boundary", () => {
     await waitFor(() => expect(host.textContent).toContain("次日研究预览（已保存草案；未正式冻结）"));
     expect(host.textContent).toContain("计划：已保存研究草案（未正式冻结）");
     dispose();
-  });
-
-  it("loads the page publication date independently from plan_date", async () => {
-    workspaceMocks.request.mockResolvedValue(workspaceBase);
-    window.history.replaceState({},"","/?date=20261001&plan_date=20261002");
-    const host=document.createElement("div");document.body.append(host);
-    const fetchMock=globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
-    const dispose=mountCatalystObservations(host,"20261002");
-    await waitFor(()=>expect(host.textContent).toContain("按公告日读取的 HKEX 官方目录"));
-    await waitFor(()=>expect(host.textContent).toContain("20261001（Asia/Hong_Kong）"));
-    const firstUrl=String(fetchMock.mock.calls[0][0]);
-    expect(firstUrl).toBe("/api/v4/manager/research/announcements?date=20261001");
-    expect(host.textContent).toContain("1 条已观察公告");
-    expect(host.textContent).toContain("来源查询覆盖截止：2026-10-01T23:00:00+08:00");
-    expect(host.textContent).toContain("342");
-
-    const planDate=host.querySelector('input[aria-label="计划目标日"]') as HTMLInputElement;
-    planDate.value="2026-10-03";
-    await fireEvent.change(planDate);
-    await waitFor(()=>expect(workspaceMocks.request).toHaveBeenCalledWith("20261003",expect.any(AbortSignal),"auto"));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const url=new URL(window.location.href);
-    expect(url.searchParams.get("date")).toBe("20261001");
-    expect(url.searchParams.get("plan_date")).toBe("20261003");
-    expect(host.querySelector("[data-announcement-date]")?.getAttribute("data-announcement-date")).toBe("20261001");
-    dispose();
-  });
-
-  it("uses the previous-session default and lets the independent announcement date be selected", async()=>{
-    workspaceMocks.request.mockResolvedValue(workspaceBase);
-    window.history.replaceState({},"","/?date=20260930&plan_date=20260930");
-    const host=document.createElement("div");document.body.append(host);
-    const dispose=mountCatalystObservations(host,"20260930");
-    await waitFor(()=>expect(analysisMocks.request).toHaveBeenCalledWith(
-      "20260930",undefined,expect.any(AbortSignal)));
-    await waitFor(()=>expect(host.querySelector<HTMLInputElement>('input[aria-label="公告日期"]')?.value)
-      .toBe("2026-09-29"));
-    const picker=host.querySelector<HTMLInputElement>('input[aria-label="公告日期"]')!;
-    picker.value="2026-09-30";await fireEvent.change(picker);
-    await waitFor(()=>expect(analysisMocks.request).toHaveBeenLastCalledWith(
-      "20260930","20260930",expect.any(AbortSignal)));
-    expect(new URL(window.location.href).searchParams.get("announcement_date")).toBe("20260930");
-    expect(host.querySelector("[aria-label='历史公告解析成果']")?.textContent).toContain("手动选择");
-    dispose();
-  });
-
-  it("ignores a late analysis response from the previous plan date",async()=>{
-    workspaceMocks.request.mockImplementation(()=>new Promise(()=>{}));
-    const replies=new Map<string,(value:Record<string,unknown>)=>void>();
-    analysisMocks.request.mockImplementation((targetDate:string)=>new Promise(resolve=>
-      replies.set(targetDate,value=>resolve(value))));
-    window.history.replaceState({},"","/?plan_date=20260921");
-    const host=document.createElement("div");document.body.append(host);
-    const dispose=mountCatalystObservations(host,"20260921");
-    await waitFor(()=>expect(replies.has("20260921")).toBe(true));
-    const planDate=host.querySelector<HTMLInputElement>('input[aria-label="计划目标日"]')!;
-    planDate.value="2026-09-22";await fireEvent.change(planDate);
-    await waitFor(()=>expect(replies.has("20260922")).toBe(true));
-    const makeReply=(target:string,pub:string)=>({
-      schema_version:"v4.manager_research.eastmoney_hk_announcement_analysis_read.v1",
-      target_trade_date:target,publication_date:pub,date_selection_basis:"PREVIOUS_HK_TRADING_SESSION",
-      source_catalog:{status:"NOT_RUN",readback_status:"NOT_RUN",directory_record_count:null},
-      analysis:{status:"NOT_IMPORTED",summary:null,records:[],gaps:["ANNOUNCEMENT_ANALYSIS_NOT_IMPORTED"]},
-    });
-    replies.get("20260922")?.(makeReply("20260922","2026-09-21"));
-    await waitFor(()=>expect(host.querySelector("[aria-label='历史公告解析成果']")?.textContent)
-      .toContain("2026-09-21（计划日前一 HK 交易日）"));
-    replies.get("20260921")?.(makeReply("20260921","2026-09-20"));
-    await Promise.resolve();
-    expect(host.querySelector("[aria-label='历史公告解析成果']")?.textContent)
-      .toContain("2026-09-21（计划日前一 HK 交易日）");
-    expect(host.querySelector("[aria-label='历史公告解析成果']")?.textContent)
-      .not.toContain("2026-09-20（计划日前一 HK 交易日）");
-    dispose();
-  });
-
-  it("shows the selected HK calendar-day count from the owner review", async () => {
-    workspaceMocks.request.mockResolvedValue(workspaceBase);
-    const fetchMock=globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
-    fetchMock.mockImplementation(async (input:RequestInfo|URL)=>{
-      const date=new URL(String(input),"http://localhost").searchParams.get("date")||"20260921";
-      return {ok:true,status:200,json:async()=>dailyReview(date,date==="20261002"?243:1)} as Response;
-    });
-    window.history.replaceState({},"","/?date=20261002&plan_date=20261003");
-    const host=document.createElement("div");document.body.append(host);
-    const dispose=mountCatalystObservations(host,"20261003");
-    await waitFor(()=>expect(host.textContent).toContain("243 条已观察公告"));
-    const summary=host.querySelector('details[data-daily-announcement-documents] summary');
-    expect(summary?.textContent).toContain("展开 243 条已观察 HKEX 公告");
-    expect(host.textContent).not.toContain("797 条已观察公告");
-    expect(host.querySelector("[data-announcement-date]")?.getAttribute("data-announcement-date")).toBe("20261002");
-    dispose();
-  });
-
-  it("submits an incremental announcement update for the selected publication day", async () => {
-    workspaceMocks.request.mockResolvedValue(workspaceBase);
-    window.history.replaceState({},"","/?date=20261001&plan_date=20261002");
-    const host=document.createElement("div");document.body.append(host);
-    const fetchMock=globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
-    const dispose=mountCatalystObservations(host,"20261002");
-    await waitFor(()=>expect(fetchMock).toHaveBeenCalledTimes(1));
-    const button=host.querySelector('[data-refresh-announcement-date="20261001"]') as HTMLButtonElement;
-    expect(button).toBeTruthy();
-    await fireEvent.click(button);
-    await waitFor(()=>expect(fetchMock).toHaveBeenCalledTimes(2));
-    const [url,init]=fetchMock.mock.calls[1] as [string,RequestInit];
-    expect(url).toBe("/api/v4/manager/research/announcements/refresh?date=20261001");
-    expect(init.method).toBe("POST");
-    await waitFor(()=>expect(host.textContent).toContain("20261001（Asia/Hong_Kong）"));
-    expect(host.querySelector("[data-announcement-date]")?.getAttribute("data-announcement-date")).toBe("20261001");
-    expect(new URL(window.location.href).searchParams.get("plan_date")).toBe("20261002");
-    const nextButton=host.querySelector('[data-refresh-announcement-date="20261001"]') as HTMLButtonElement;
-    expect(nextButton.disabled).toBe(false);
-    dispose();
-  });
-
-  it("reports a failed daily update with unknown coverage instead of retaining a stale count", async () => {
-    workspaceMocks.request.mockResolvedValue(workspaceBase);
-    const fetchMock=globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
-    fetchMock.mockImplementation(async (input:RequestInfo|URL)=>{
-      if(String(input).includes("/announcements/refresh?"))return {ok:false,status:409} as Response;
-      const date=new URL(String(input),"http://localhost").searchParams.get("date")||"20260921";
-      return {ok:true,status:200,json:async()=>dailyReview(date)} as Response;
-    });
-    window.history.replaceState({},"","/?date=20261001&plan_date=20261002");
-    const host=document.createElement("div");document.body.append(host);
-    const dispose=mountCatalystObservations(host,"20261002");
-    await waitFor(()=>expect(host.textContent).toContain("1 条已观察公告"));
-    await fireEvent.click(host.querySelector('[data-refresh-announcement-date="20261001"]') as HTMLElement);
-    await waitFor(()=>expect(host.textContent).toContain("公告增量更新失败，覆盖数量未知（ANNOUNCEMENT_REFRESH_HTTP_409）"));
-    expect(host.textContent).toContain("覆盖数量未知，不是0条");
-    expect(host.textContent).not.toContain("1 条已观察公告");
-    dispose();
-  });
-
-  it("ignores a late prior-day response after the page remounts on a new selected date", async () => {
-    workspaceMocks.request.mockResolvedValue(workspaceBase);
-    const fetchMock=globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
-    const replies=new Map<string,(response:Response)=>void>();
-    fetchMock.mockImplementation((input:RequestInfo|URL)=>{
-      const date=new URL(String(input),"http://localhost").searchParams.get("date")||"20260921";
-      return new Promise(resolve=>replies.set(date,response=>resolve(response)));
-    });
-    const host=document.createElement("div");document.body.append(host);
-    window.history.replaceState({},"","/?date=20261001&plan_date=20261002");
-    const disposeOld=mountCatalystObservations(host,"20261002");
-    await waitFor(()=>expect(replies.has("20261001")).toBe(true));
-    disposeOld();
-    window.history.replaceState({},"","/?date=20261002&plan_date=20261002");
-    const disposeNew=mountCatalystObservations(host,"20261002");
-    await waitFor(()=>expect(replies.has("20261002")).toBe(true));
-    replies.get("20261002")?.({ok:true,status:200,json:async()=>dailyReview("20261002")} as Response);
-    await waitFor(()=>expect(host.textContent).toContain("20261002（Asia/Hong_Kong）"));
-    replies.get("20261001")?.({ok:true,status:200,json:async()=>dailyReview("20261001")} as Response);
-    await Promise.resolve();
-    expect(host.textContent).toContain("20261002（Asia/Hong_Kong）");
-    expect(host.textContent).not.toContain("20261001（Asia/Hong_Kong）");
-    disposeNew();
   });
 
   it("shows saved next-session research focus separately from unavailable formal Stage recommendations", async () => {
@@ -459,57 +245,6 @@ describe("catalyst workspace runtime boundary", () => {
     dispose();
   });
 
-  it("keeps the requested-day manual HK observation compact until all 100 rows are expanded", async () => {
-    const payload = readPinnedManualObservationFixture("close_recapture.json");
-    const overlay = readPinnedManualObservationFixture("close_recapture.candidates.json");
-    const candidateOverlay = payload.candidate_overlay as JsonObject;
-    const observedRows = overlay.rows as JsonObject[];
-    expect(observedRows).toHaveLength(100);
-    const evidence = {
-      ...payload,
-      candidate_overlay: { ...candidateOverlay, rows: observedRows },
-    } as JsonObject;
-    const planningEvidence = {
-      plan_trade_date: "20261002", research_cutoff: "2026-10-02T09:20:00+08:00",
-      source_trade_date: "20260930", available_at: "2026-09-30T23:10:00+08:00",
-      planner_availability: "CANNOT_CONFIRM", candidates: [],
-    };
-    workspaceMocks.request.mockResolvedValue({
-      ...workspaceBase,
-      close_recapture_evidence: evidence,
-      planning_close_recapture_evidence: planningEvidence,
-    });
-
-    const host = document.createElement("div");
-    document.body.append(host);
-    const dispose = mountCatalystObservations(host, "20261002");
-    await waitFor(() => expect(host.textContent).toContain("可展示观察行 100/100"));
-
-    const sections = [...host.querySelectorAll(".manager-close-recapture-evidence")];
-    const manual = sections[0] as HTMLElement;
-    const priorPlanContext = sections[1] as HTMLElement;
-    expect(manual.querySelector("h4")?.textContent).toBe("请求日独立港股证券盘后观察");
-    expect(manual.textContent).toContain("状态 READY · 来源日 20261002 · 计划日 20261008");
-    expect(manual.textContent).toContain("真实 available_at 2026-10-02T17:55:22.905209+08:00");
-    expect(manual.textContent).toContain("HK_SECURITIES_SESSION_MINUTE_OBSERVATION");
-    expect(manual.textContent).toContain("来源产物市场标签 HK_CONNECT；实际观察市场 HK_SECURITIES");
-    expect(manual.textContent).toContain("不表示港股通可交易资格或官方收盘价");
-    expect(priorPlanContext.textContent).toContain("来源日 20260930");
-
-    const rowDetails = manual.querySelector("details[data-observation-rows='true']") as HTMLDetailsElement;
-    expect(rowDetails.open).toBe(false);
-    expect(rowDetails.querySelectorAll(":scope > .manager-close-recapture-candidate")).toHaveLength(0);
-    expect(host.querySelectorAll(".decision-stock")).toHaveLength(0);
-
-    await fireEvent.click(rowDetails.querySelector("summary") as HTMLElement);
-    await waitFor(() => expect(rowDetails.querySelectorAll(":scope > .manager-close-recapture-candidate")).toHaveLength(100));
-    expect([...rowDetails.querySelectorAll<HTMLElement>(":scope > .manager-close-recapture-candidate")]
-      .map(card => card.dataset.symbol)).toEqual(observedRows.map(row => row.symbol));
-    expect(rowDetails.textContent).toContain("HK.02723");
-    expect(host.querySelectorAll(".decision-stock")).toHaveLength(0);
-    dispose();
-  });
-
   it("merges only identical mapping summaries while retaining every raw relation", () => {
     const theme = {
       theme: "AI_DRUG_RND",
@@ -597,35 +332,23 @@ describe("catalyst workspace runtime boundary", () => {
     dispose();
   });
 
-  it("renders Eastmoney evidence from the selected-date daily owner review", async () => {
+  it("renders the actual Eastmoney owner workspace readback instead of reporting a network failure", async () => {
     const raw = JSON.parse(readFileSync(
       "/Users/lexi/Desktop/学习/agents调试/EASTMONEY_HK_ANN_20260929/integration/workspace_after.json",
       "utf8",
     ));
     workspaceMocks.request.mockImplementation(async () => validateManagerWorkspace(raw, "20260929"));
-    const docs=raw.announcement_observation.eastmoney_hk_documents;
-    const fetchMock=globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
-    fetchMock.mockImplementation(async (input:RequestInfo|URL)=>{
-      const date=new URL(String(input),"http://localhost").searchParams.get("date")||"20260929";
-      return {ok:true,status:200,json:async()=>({...dailyReview(date),eastmoney_hk_status:"PARTIAL",eastmoney_hk_documents:docs})} as Response;
-    });
     const host = document.createElement("div");
     document.body.append(host);
     const dispose = mountCatalystObservations(host, "20260929");
 
     await waitFor(() => expect(host.querySelector(".manager-catalyst-observations")?.getAttribute("data-read-state")).toBe("READY"));
-    const eastSummary=[...host.querySelectorAll("summary")].find(node=>node.textContent?.includes("东方财富港股公告"));
-    expect(eastSummary).toBeTruthy();
-    await fireEvent.click(eastSummary as HTMLElement);
-    await waitFor(()=>expect(host.textContent).toContain("HK.00700 腾讯控股"));
-    expect(host.textContent).toContain("AN202609281829962076");
-    expect(host.textContent).not.toContain("网络连接或响应读取失败");
-    const targetArticle=[...host.querySelectorAll('article[data-eastmoney-announcement]')]
-      .find(article=>article.textContent?.includes("AN202609281829962076"));
-    const body=targetArticle?.querySelector('[data-eastmoney-body]') as HTMLDetailsElement;
-    expect(body).toBeTruthy();
-    await fireEvent.click(body.querySelector("summary") as HTMLElement);
-    const bodyPages = host.querySelectorAll('[data-eastmoney-announcement] [data-eastmoney-body-page] pre');
+    const rendered = host.textContent || "";
+    expect(rendered).toContain("东方财富港股公告");
+    expect(rendered).toContain("HK.00700 腾讯控股");
+    expect(rendered).toContain("AN202609281829962076");
+    expect(rendered).not.toContain("网络连接或响应读取失败");
+    const bodyPages = host.querySelectorAll("[data-eastmoney-body-page] pre");
     expect(bodyPages).toHaveLength(4);
     expect([...bodyPages].reduce((total, page) => total + (page.textContent || "").length, 0)).toBeGreaterThan(19000);
     dispose();

@@ -16,6 +16,6 @@
 
 同一 V4/8873 导航“原版 Vibe · 8910”附近追加 **今日选股、个股研究、复盘验证**。旧按钮、旧页面、默认页和原业务行为保留，新旧页面并行使用原数据、API、计算和完成事件。A 股与港股都覆盖，P0 优先，三个页面均交付可用首版。
 
-这是开发升级工作区，不是第二个生产系统。本次初始化未实现三页面、未部署、未改调度/富途/交易。后续实施在 `codex/v45-parallel-p0-20261113` 分支提交并推送本仓库，完成验收后再另行确认部署。
+这是开发升级工作区，不是第二个生产系统。三页面 P0 候选现已实现，工作分支为 `codex/v45-parallel-p0-20261113`；没有部署或修改调度/富途/交易。详见 [实施、测试与未完成项](docs/v45/IMPLEMENTATION_REPORT.md)、[独立审查及修复记录](docs/v45/INDEPENDENT_REVIEW.md) 和 [机器验收摘要](docs/v45/VERIFICATION_RESULTS.json)。新页定向验收通过，完整旧套件与类型检查的既有失败仍保留，浏览器和生产验收不冒称完成。
 
 `RESEARCH_ONLY=true` · `production_allowed=false` · `buy_gate_updated=false` · `orders_sent=false`

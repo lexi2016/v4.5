@@ -1,4 +1,5 @@
-export const DEFAULT_DATE = "20261113";
+// Calendar navigation only. The original market API remains authoritative for trading days.
+export const DEFAULT_DATE = new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Shanghai"}).format(new Date()).replaceAll("-","");
 export const FORMULA_COMPARISONS = Object.freeze([
   { sourceDate: "20261111", observationDate: "20261112", original: 44, v192: 25, common: 0, originalOnly: 44, v192Only: 25, status: "FROZEN_COMPARISON" },
   { sourceDate: "20261112", observationDate: "20261113", original: 40, v192: 10, common: 1, originalOnly: 39, v192Only: 9, status: "FROZEN_COMPARISON" },
@@ -21,18 +22,24 @@ export function marketOf(value) {
 export function securityIdentity(marketValue, symbolValue) {
   const market = marketOf(marketValue);
   const raw = String(symbolValue ?? "").trim().toUpperCase();
-  if (!market || !raw) return "";
+  if (!raw || !["A","HK"].includes(market)) return "";
+  if (market === "A" && (/^HK\./.test(raw) || /\.HK$/.test(raw))) return "";
+  if (market === "HK" && (/^A\./.test(raw) || /\.(SZ|SH|BJ)$/.test(raw))) return "";
   const code = raw.replace(/^A\./, "").replace(/^HK\./, "").replace(/\.(SZ|SH|BJ|HK)$/, "");
-  return market + ":" + code;
+  if (market === "A" && !/^\d{6}$/.test(code)) return "";
+  if (market === "HK" && !/^\d{1,5}$/.test(code)) return "";
+  return market + ":" + (market === "HK" ? code.padStart(5,"0") : code);
 }
 
 export function apiSymbol(marketValue, symbolValue) {
   const market = marketOf(marketValue);
   const raw = String(symbolValue ?? "").trim().toUpperCase();
-  if (market === "HK") return raw.startsWith("HK.") ? raw : "HK." + raw.replace(/\.HK$/, "");
-  if (market !== "A") return raw;
+  const identity=securityIdentity(market,raw);
+  if (!identity) throw new Error("证券与市场身份不匹配");
+  if (market === "HK") return "HK." + identity.split(":")[1];
   if (/\.(SZ|SH|BJ)$/.test(raw)) return raw;
   const code = raw.replace(/^A\./, "");
+  if (/^(92|[48])/.test(code)) return code + ".BJ";
   if (/^[569]/.test(code)) return code + ".SH";
   if (/^[023]/.test(code)) return code + ".SZ";
   if (/^[48]/.test(code)) return code + ".BJ";
@@ -51,14 +58,30 @@ function sourceEntry(pool, row) {
   return {
     poolId: String(pool.pool_id ?? "UNKNOWN_SOURCE"),
     poolStatus: String(pool.status ?? "CANNOT_CONFIRM"),
-    sourceDate: row.source_date ?? row.signal_date ?? pool.signal_date ?? pool.trade_date ?? null,
+    sourceDate: row.source_date || row.signal_date || pool.signal_date || null,
     rank: row.original_rank ?? row.pool_rank ?? row.rank ?? row.stage_rank ?? null,
     score: row.original_score ?? row.pool_score ?? row.score ?? row.stage_score ?? null,
     sourceRole: row.source_role ?? pool.source_role ?? null,
     sourceSha256: row.source_sha256 ?? pool.source_sha256 ?? pool.source_artifact_sha256 ?? null,
     stageSelectionEligible: row.stage_selection_eligible ?? pool.stage_selection_eligible ?? null,
     sourceMergeRole: row.source_merge_role ?? pool.source_merge_role ?? null,
+    reason: row.source_trace || row.reason || row.research_title || row.recommendation_status || null,
+    decision: row.recommendation_status ?? row.candidate_role ?? pool.recommendation_status ?? null,
+    quoteAsOf: row.source_last_bar_time || row.quote_asof || row.source_time || row.update_time || null,
+    runId: row.source_run_id || pool.source_run_id || null,
+    evidenceMode: row.source_mode || pool.source_mode || row.evidence_mode || pool.evidence_mode || null,
+    temporalCutoffSafe: row.temporal_cutoff_safe ?? pool.temporal_cutoff_safe ?? null,
   };
+}
+
+const countOrNull = value => value !== null && value !== undefined && value !== "" && Number.isInteger(Number(value)) && Number(value)>=0 ? Number(value) : null;
+const stableObject = value => JSON.stringify(Object.entries(value ?? {}).sort(([a],[b])=>a.localeCompare(b)));
+export function statusKind(value) {
+  const s=String(value??"UNKNOWN").toUpperCase();
+  if (/PARTIAL|STALE|EXPIRED|NOT_MATURED|RUNNING/.test(s)) return "warn";
+  if (/FAIL|ERROR|CONFLICT|INVALID/.test(s)) return "bad";
+  if (/NOT_|UNKNOWN|MISSING|CANNOT|UNVERIFIED|PENDING/.test(s)) return "warn";
+  return /READY|VERIFIED|COMPLETE|SUCCEEDED/.test(s) ? "good" : "warn";
 }
 
 export function mergePoolPages(pages) {
@@ -67,41 +90,72 @@ export function mergePoolPages(pages) {
   if (!expectedDate) throw new Error("候选响应缺少交易日期");
   const candidates = new Map();
   const poolStates = new Map();
+  const poolMemberships = new Map();
+  const isolated=[];
+  const first=pages[0];
   let membershipCount = 0;
   let pageComplete = true;
   for (const payload of pages) {
     const actualDate = String(payload.trade_date ?? payload.date ?? payload.target_date ?? "");
     if (actualDate !== expectedDate) throw new Error("候选日期不匹配：" + actualDate + " != " + expectedDate);
+    if ((payload.input_fingerprint ?? null)!==(first.input_fingerprint ?? null)
+        || stableObject(payload.source_digests)!==stableObject(first.source_digests)
+        || stableObject(payload.market_totals)!==stableObject(first.market_totals)) throw new Error("候选分页版本身份冲突（fingerprint / source_digests / 分母）");
     if (!payload.pagination || typeof payload.pagination.has_more !== "boolean") pageComplete = false;
     else if (payload.pagination.has_more) pageComplete = false;
     for (const pool of payload.pools ?? []) {
+      if(!pool || typeof pool!=='object' || Array.isArray(pool)) {
+        isolated.push({poolId:null,reason:'MALFORMED_SOURCE_POOL'});continue;
+      }
       const poolId = String(pool.pool_id ?? "UNKNOWN_SOURCE");
-      poolStates.set(poolId, {
+      const existing=poolStates.get(poolId);
+      if (existing && (existing.market!==marketOf(pool.market) || existing.sourceSha256!==(pool.source_sha256 ?? pool.source_artifact_sha256 ?? null)
+          || existing.totalRows!==countOrNull(pool.pool_size ?? pool.source_row_count))) throw new Error("来源池分页身份冲突："+poolId);
+      const sourceDates = new Set(existing?.sourceDates ?? []);
+      if(pool.signal_date) sourceDates.add(pool.signal_date);
+      const state={
         poolId, market: marketOf(pool.market), status: String(pool.status ?? "CANNOT_CONFIRM"),
-        totalRows: Number(pool.pool_size ?? pool.source_row_count ?? 0),
-        sourceDate: pool.signal_date ?? pool.trade_date ?? null,
+        label: pool.display_name ?? poolId,
+        totalRows: countOrNull(pool.pool_size ?? pool.source_row_count),
+        sourceDate: null, sourceDates: [],
         sourceSha256: pool.source_sha256 ?? pool.source_artifact_sha256 ?? null,
         cannotConfirm: Array.isArray(pool.cannot_confirm) ? pool.cannot_confirm : [],
         hasMore: Boolean(pool.has_more),
-      });
-      for (const row of pool.rows ?? []) {
+      };
+      poolStates.set(poolId,state);
+      if(!poolMemberships.has(poolId))poolMemberships.set(poolId,new Set());
+      const sourceRows=pool.rows ?? [];
+      if(!Array.isArray(sourceRows)) {
+        isolated.push({poolId,reason:'MALFORMED_SOURCE_ROWS'});
+        state.status='INVALID_SOURCE_SHAPE';state.readRows=poolMemberships.get(poolId).size;
+        state.cannotConfirm=[...state.cannotConfirm,'SOURCE_ROWS_NOT_ARRAY'];continue;
+      }
+      for (const row of sourceRows) {
+        if(!row || typeof row!=='object' || Array.isArray(row)) {
+          isolated.push({poolId,reason:'MALFORMED_SOURCE_ROW'});continue;
+        }
         const market = marketOf(row.market ?? pool.market);
-        if (market !== "A" && market !== "HK") continue;
         const symbol = String(row.symbol ?? row.code ?? row.stock_code ?? "").trim();
         const identity = securityIdentity(market, symbol);
-        if (!identity) continue;
-        membershipCount += 1;
+        if (!identity || market!==marketOf(pool.market)) { isolated.push({poolId,symbol,reason:"MARKET_OR_SECURITY_CONFLICT"}); continue; }
+        const members=poolMemberships.get(poolId);
+        if(members.has(identity)) { isolated.push({poolId,symbol,reason:"DUPLICATE_SOURCE_MEMBERSHIP"}); continue; }
+        members.add(identity);membershipCount += 1;
         if (!candidates.has(identity)) candidates.set(identity, {
-          identity, market, symbol, displaySymbol: displaySymbol(market, symbol),
+          identity, market, symbol: row.ts_code && securityIdentity(market,row.ts_code)===identity ? row.ts_code : symbol, displaySymbol: displaySymbol(market, symbol),
           name: row.stock_name ?? row.name ?? row.display_name ?? symbol,
           sources: [], sourceDates: new Set(),
         });
         const candidate = candidates.get(identity);
         const entry = sourceEntry(pool, row);
+        if(entry.sourceDate) sourceDates.add(entry.sourceDate);
         if (!candidate.sources.some(x => x.poolId === entry.poolId && x.rank === entry.rank && x.sourceSha256 === entry.sourceSha256)) candidate.sources.push(entry);
         if (entry.sourceDate) candidate.sourceDates.add(entry.sourceDate);
         if (!candidate.name || candidate.name === candidate.symbol) candidate.name = row.stock_name ?? row.name ?? row.display_name ?? candidate.name;
       }
+      state.sourceDates=[...sourceDates].sort();
+      state.sourceDate=state.sourceDates.length ? state.sourceDates.join(", ") : null;
+      state.readRows=poolMemberships.get(poolId).size;
     }
   }
   const last = pages[pages.length - 1];
@@ -113,11 +167,11 @@ export function mergePoolPages(pages) {
   })).sort((a,b) => a.market.localeCompare(b.market) || a.displaySymbol.localeCompare(b.displaySymbol));
   const counts = { A: rows.filter(x => x.market === "A").length, HK: rows.filter(x => x.market === "HK").length };
   const expected = {
-    A: Number(totals.A ?? last.a_all_pool_row_count ?? 0),
-    HK: Number(totals.HK ?? poolStates.get("hkconnect_d1_top100")?.totalRows ?? 0),
+    A: countOrNull(totals.A ?? last.a_all_pool_row_count),
+    HK: countOrNull(totals.HK ?? poolStates.get("hkconnect_d1_top100")?.totalRows),
   };
   const lastPage = pages[pages.length - 1];
-  const paginationChainValid = pages.length > 0 && lastPage.pagination?.has_more === false && pages.every((p, i) => {
+  const paginationChainValid = first.pagination?.offset===0 && lastPage.pagination?.has_more === false && pages.every((p, i) => {
     if (!p.pagination) return false;
     if (i === pages.length - 1) return true;
     return p.pagination.has_more === true && Number.isInteger(p.pagination.next_offset)
@@ -125,15 +179,18 @@ export function mergePoolPages(pages) {
       && p.pagination.next_offset === pages[i + 1]?.pagination?.offset;
   });
   const allPagesComplete = paginationChainValid;
-  const countsMatch = expected.A > 0 && expected.HK > 0 && counts.A === expected.A && counts.HK === expected.HK;
+  const countsMatch = expected.A !== null && expected.HK !== null && counts.A === expected.A && counts.HK === expected.HK;
   const pools = [...poolStates.values()].sort((a,b) => a.poolId.localeCompare(b.poolId));
+  const membershipComplete=pools.every(p=>p.totalRows!==null && p.readRows===p.totalRows);
+  const complete=allPagesComplete && countsMatch && membershipComplete && !isolated.length;
   return {
     date: expectedDate, rows, pools, counts, expected, membershipCount,
     dataStatus: String(last.data_status ?? last.daily_readiness_status ?? "CANNOT_CONFIRM"),
-    complete: allPagesComplete && countsMatch,
-    completenessReason: allPagesComplete && countsMatch ? null : !allPagesComplete ? "分页尚未完整读取" : "去重数量与API市场总数不一致",
+    complete, isolated,
+    completenessReason: complete ? null : !allPagesComplete ? "分页尚未完整读取" : !countsMatch ? "去重数量与API市场总数不一致或分母缺失" : !membershipComplete ? "来源关系数量与逐池分母不一致" : "证券或来源关系存在冲突",
     generation: last.generation ?? last.run_id ?? null,
-    inputSha256: last.input_sha256 ?? null,
+    inputSha256: last.input_fingerprint ?? last.input_sha256 ?? null,
+    sourceDigests: last.source_digests ?? {},
     marketTotals: totals,
   };
 }
@@ -144,9 +201,13 @@ export async function fetchAllPreselection(dateValue, fetcher = fetch) {
   let offset = 0;
   for (let page = 0; page < 20; page += 1) {
     const url = "/api/v4/preselection-pools?" + new URLSearchParams({ date, limit: String(limit), offset: String(offset) });
-    const response = await fetcher(url, { method: "GET", credentials: "same-origin", redirect: "error", cache: "no-store" });
-    if (!response.ok) throw new Error("候选池读取失败 HTTP " + response.status);
-    const payload = await response.json();
+    let payload;
+    try {
+      payload = await readJson(url, fetcher);
+    } catch(error) {
+      if(!pages.length) throw error;
+      return {...mergePoolPages(pages),complete:false,completenessReason:"后续候选页读取失败："+(error instanceof Error ? error.message : "未知读取错误")};
+    }
     const responseDate = String(payload.trade_date ?? payload.date ?? payload.target_date ?? "");
     if (responseDate !== date) throw new Error("候选池日期不匹配，已拒绝展示");
     if (!payload.pagination || !Number.isInteger(payload.pagination.offset) || payload.pagination.offset !== offset) throw new Error("候选分页身份不完整");
@@ -165,33 +226,123 @@ export async function readJson(url, fetcher = fetch) {
   return response.json();
 }
 
-export async function loadResearchBundle({ market: marketValue, symbol, date }, fetcher = fetch) {
+async function optionalJson(url, fetcher) {
+  try { return await readJson(url,fetcher); }
+  catch(error) { return {status:"FAILED",cannot_confirm:[error instanceof Error ? error.message : "读取失败"]}; }
+}
+
+function evidenceIdentity(item, symbol, date, product) {
+  if(!item || typeof item!=='object' || Array.isArray(item) || typeof item.status!=='string') {
+    return {status:'CANNOT_CONFIRM',cannot_confirm:['证据响应结构无效，已隔离该项']};
+  }
+  if(item.status==="FAILED")return item;
+  const actualDate=item.data_date ?? item.dataDate;
+  const actualSymbol=item.symbol ?? item.row?.symbol;
+  const materialized=['READY','PARTIAL_RECEIVED'].includes(item.status);
+  const manifestShas=[item.numeric_manifest?.sha256,item.product_manifest?.sha256,item.manifest?.sha256].filter(Boolean);
+  let identityConflict=false;
+  try {
+    identityConflict=(actualDate && normaliseDate(actualDate)!==date)
+      || (actualSymbol && apiSymbol("A",actualSymbol)!==symbol);
+  } catch { identityConflict=true; }
+  const conflict=identityConflict
+    || (product?.source_generation && item.source_generation && product.source_generation!==item.source_generation)
+    || (product?.source_identity?.input_sha256 && (item.input_sha256 || item.source_identity?.input_sha256)
+      && product.source_identity.input_sha256!==(item.input_sha256 || item.source_identity?.input_sha256))
+    || (product?.manifest?.sha256 && manifestShas.some(sha=>sha!==product.manifest.sha256));
+  if(conflict)return {status:"CONFLICT",cannot_confirm:["证券、来源日或generation/input/manifest身份冲突，已隔离该项"]};
+  const inputSha=item.input_sha256 || item.source_identity?.input_sha256;
+  if(materialized && (!actualDate || !actualSymbol || !item.source_generation || !inputSha || !manifestShas.length)) {
+    return {status:'CANNOT_CONFIRM',original_status:item.status,cannot_confirm:['来源日期 / 证券 / generation / input SHA / numeric manifest 身份缺失，不能绑定本批证据']};
+  }
+  return item;
+}
+
+function hkEnvelope(payload) {
+  if(payload.schema_version!=="v4.manager_workbench.v1")throw new Error("港股工作台合同不匹配");
+  if(payload.production_allowed===true || payload.buy_gate_updated===true || payload.orders_sent===true)throw new Error("港股研究响应安全身份冲突");
+  return payload;
+}
+
+export async function loadHkWorkbench({symbol,date,runId},fetcher=fetch) {
+  const resolved=apiSymbol("HK",symbol),safeDate=normaliseDate(date);
+  const qs=new URLSearchParams({q:resolved,limit:"200",offset:"0"});
+  if(runId)qs.set("run_id",runId);
+  const day=hkEnvelope(await readJson(`/api/v4/manager-workbench/days/${safeDate}?${qs}`,fetcher));
+  const snapshot=day.data?.snapshot;
+  if(!snapshot)return {status:day.state ?? "CANNOT_CONFIRM",day,stock:null};
+  if(snapshot.context?.market!=="HK_CONNECT" || snapshot.context?.target_date!==safeDate || !snapshot.run_id
+      || (runId && runId!==snapshot.run_id))throw new Error("港股日期、市场或run_id冲突");
+  const detail=hkEnvelope(await readJson(`/api/v4/manager-workbench/stocks/${encodeURIComponent(resolved)}?`+new URLSearchParams({date:safeDate,run_id:snapshot.run_id}),fetcher));
+  if(detail.data && (detail.data.plan_run_id!==snapshot.run_id
+    || (detail.data.stock && (detail.data.stock.market!=="HK_CONNECT" || apiSymbol("HK",detail.data.stock.symbol)!==resolved))))throw new Error("港股个股与批次身份冲突");
+  return {status:detail.state ?? day.state ?? "CANNOT_CONFIRM",day,detail,stock:detail.data?.stock ?? null,snapshot};
+}
+
+export async function loadHkReview({date,planRunId},fetcher=fetch) {
+  const safeDate=normaliseDate(date);
+  if(!planRunId)throw new Error("港股复盘缺少所选计划批次");
+  const result=hkEnvelope(await readJson(`/api/v4/manager-workbench/reviews/${safeDate}?`+new URLSearchParams({plan_run_id:planRunId}),fetcher));
+  if(result.data && (result.data.target_date!==safeDate || result.data.plan_run_id!==planRunId))throw new Error("港股复盘日期或计划批次冲突");
+  if(result.data?.ranking_date && result.data.ranking_date!==safeDate)throw new Error("港股收盘榜日期冲突");
+  if(result.state==='READY' && !result.data)throw new Error("港股复盘 READY 缺少同批结果");
+  return result;
+}
+
+export function maturityGroups(product) {
+  return (product?.row?.statistics?.groups ?? []).map(group=>{
+    const horizon=name=>{
+      const value=group.horizons?.[name];
+      if(!value)return null;
+      const cases=[...(value.cases??[])].sort((a,b)=>String(b.event_date??"").localeCompare(String(a.event_date??"")));
+      return {...value,cases,latest:cases[0]??null};
+    };
+    return {groupId:group.group_id,status:group.status,identityStatus:group.identity_status,sourceIdentity:group.source_identity,d2:horizon("d2"),d5:horizon("d5")};
+  });
+}
+
+export async function loadEventCases({symbol,date,group,horizon,product},fetcher=fetch) {
+  const resolved=apiSymbol("A",symbol),safeDate=normaliseDate(date);
+  if(!["original","nav_smallk","nav_pullback","nav_breakout"].includes(group) || !["d2","d5"].includes(horizon))throw new Error("事件分组或周期无效");
+  const value=await optionalJson("/api/v4/research/a-share/event-cases?"+new URLSearchParams({date:safeDate,symbol:resolved,group,horizon}),fetcher);
+  const checked=evidenceIdentity(value,resolved,safeDate,product);
+  if(checked.status==="READY" && (checked.group!==group || checked.horizon!==horizon))return {status:"CONFLICT",cannot_confirm:["事件分组或周期身份冲突"]};
+  return checked;
+}
+
+export async function loadDailyProduct({symbol,date},fetcher=fetch) {
+  const resolved=apiSymbol("A",symbol),safeDate=normaliseDate(date);
+  return evidenceIdentity(await optionalJson("/api/v4/research/a-share/daily-product?"+new URLSearchParams({date:safeDate,symbol:resolved}),fetcher),resolved,safeDate);
+}
+
+export async function loadResearchBundle({ market: marketValue, symbol, date, observationDate, runId }, fetcher = fetch) {
   const market = marketOf(marketValue);
   const safeDate = normaliseDate(date);
   if (!symbol) throw new Error("请提供证券代码");
   if (market === "HK") {
-    const url = "/api/v4/manager/workbench-research?" + new URLSearchParams({ date: safeDate, market: "HK_CONNECT", slot: "1530" });
-    const workbench = await readJson(url, fetcher);
-    if (workbench.trade_date && workbench.trade_date !== safeDate) throw new Error("港股研究日期不匹配");
-    const rows = workbench.candidates ?? workbench.rows ?? workbench.items ?? [];
-    const row = Array.isArray(rows) ? rows.find(x => securityIdentity("HK", x.symbol ?? x.code) === securityIdentity("HK", symbol)) : null;
-    return { market, symbol, date: safeDate, workbench, row, status: workbench.status ?? "CANNOT_CONFIRM", source: "HK_CONNECT_0_2_MANAGER_WORKBENCH" };
+    const targetDate=normaliseDate(observationDate ?? date);
+    const [workbenchResult,poolResult]=await Promise.allSettled([
+      loadHkWorkbench({symbol,date:targetDate,runId},fetcher),fetchAllPreselection(targetDate,fetcher)
+    ]);
+    const workbench=workbenchResult.status==="fulfilled" ? workbenchResult.value : {status:"FAILED",cannot_confirm:[String(workbenchResult.reason.message ?? workbenchResult.reason)]};
+    const pools=poolResult.status==="fulfilled" ? poolResult.value : null;
+    const candidate=pools?.rows.find(x=>x.identity===securityIdentity("HK",symbol)) ?? null;
+    return {market,symbol:apiSymbol("HK",symbol),date:safeDate,observationDate:targetDate,workbench,candidate,pools,
+      status:workbench.status,source:"V4_MANAGER_WORKBENCH_AND_HK_0_2_POOL",poolError:poolResult.status==="rejected" ? String(poolResult.reason.message ?? poolResult.reason) : null};
   }
   if (market !== "A") throw new Error("不支持的市场身份：" + market);
   const resolvedSymbol = apiSymbol(market, symbol);
   const qs = new URLSearchParams({ date: safeDate, symbol: resolvedSymbol });
-  const [product, chart, company, d2, d5] = await Promise.all([
-    readJson("/api/v4/research/a-share/daily-product?" + qs, fetcher),
-    readJson("/api/v4/research/a-share/original-chart?" + qs, fetcher),
-    readJson("/api/v4/research/a-share/company-materials?" + qs, fetcher),
-    readJson("/api/v4/research/a-share/event-cases?" + new URLSearchParams({ date: safeDate, symbol, group: "original", horizon: "d2" }), fetcher),
-    readJson("/api/v4/research/a-share/event-cases?" + new URLSearchParams({ date: safeDate, symbol, group: "original", horizon: "d5" }), fetcher),
+  const product=await loadDailyProduct({symbol:resolvedSymbol,date:safeDate},fetcher);
+  if(product.source_generation)qs.set("generation",product.source_generation);
+  if(product.source_identity?.input_sha256)qs.set("input_sha256",product.source_identity.input_sha256);
+  const [chartRaw,companyRaw] = await Promise.all([
+    optionalJson("/api/v4/research/a-share/original-chart?" + qs, fetcher),
+    optionalJson("/api/v4/research/a-share/company-materials?" + qs, fetcher),
   ]);
-  for (const item of [product, chart, company, d2, d5]) {
-    const actual = item.data_date ?? item.dataDate;
-    if (actual && actual !== safeDate) throw new Error("个股研究返回日期冲突，已拒绝合并");
-  }
-  return { market, symbol: resolvedSymbol, date: safeDate, product, chart, company, d2, d5, status: product.status ?? "CANNOT_CONFIRM", source: "V4_A_SHARE_DAILY_PRODUCT" };
+  const chart=evidenceIdentity(chartRaw,resolvedSymbol,safeDate,product), company=evidenceIdentity(companyRaw,resolvedSymbol,safeDate,product);
+  return { market, symbol: resolvedSymbol, date: safeDate, product, chart, company,
+    maturity:maturityGroups(product),status: [product,chart,company].every(x=>x.status==="READY") ? "READY" : "PARTIAL", source: "V4_A_SHARE_DAILY_PRODUCT" };
 }
 
 export async function loadReview(dateValue, fetcher = fetch) {

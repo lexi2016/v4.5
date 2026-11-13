@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
-import { mergePoolPages, normaliseDate, securityIdentity, formulaComparisonFor } from "./data.js";
+import { mergePoolPages, normaliseDate, securityIdentity, formulaComparisonFor, fetchFormulaComparisonRows } from "./data.js";
 
 function page(offset, hasMore, pools, marketTotals={A:2,HK:1}) {
   return { trade_date:"20261112", data_status:"PARTIAL_WITH_ROWS", market_totals:marketTotals,
@@ -17,7 +17,7 @@ test("security identity keeps A/HK namespaces separate and normalises source pre
 test("multi-page merge deduplicates securities but preserves every source membership",()=>{
   const pages=[
     page(0,true,[
-      {pool_id:"a_d1_premarket_pool",market:"A",status:"V192_CANDIDATE_READY",pool_size:2,rows:[{symbol:"A.000001",name:"平安银行",source_date:"20261111",rank:1,score:88,source_sha256:"a"}]},
+      {pool_id:"a_d1_premarket_pool",market:"A",status:"V192_CANDIDATE_READY",pool_size:1,rows:[{symbol:"A.000001",name:"平安银行",source_date:"20261111",rank:1,score:88,source_sha256:"a"}]},
       {pool_id:"a_d1_fupan_watchlist_pool",market:"A",status:"PARTIAL",pool_size:1,rows:[{symbol:"000001.SZ",name:"平安银行",source_date:"20261111",rank:3,score:77,source_sha256:"b"}]},
       {pool_id:"a_d1_stage7_fenshi_review_pool",market:"A",status:"CANNOT_CONFIRM",pool_size:0,rows:[],cannot_confirm:["STAGE7_MISSING"]}
     ]),

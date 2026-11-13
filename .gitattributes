@@ -10,3 +10,7 @@
 *.pdf binary
 *.gz binary
 *.zip binary
+# Preserve the exact frozen API source bytes for these inherited CRLF assets.
+apps/web/src/style.css -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+apps/web/preview/research-lane.css -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+apps/web/preview/research-lane.html -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

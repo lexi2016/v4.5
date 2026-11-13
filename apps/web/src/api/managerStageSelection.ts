@@ -15,7 +15,7 @@ export async function loadManagerStageSelectionExact(
   });
   const requestInit: RequestInit = { cache: "no-store" };
   if (signal) requestInit.signal = signal;
-  const response = await fetch(`/api/v3/manager/stage-selection?${query.toString()}`, requestInit);
+  const response = await fetch(`/api/v4/manager/stage-selection?${query.toString()}`, requestInit);
   if (!response.ok) {
     throw new ManagerReadError(
       "HTTP_NON_2XX",

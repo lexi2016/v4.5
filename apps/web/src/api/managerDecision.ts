@@ -9,7 +9,7 @@ export async function loadManagerDecisionExact(
   const requestInit: RequestInit = { cache: "no-store" };
   if (signal) requestInit.signal = signal;
   const response = await fetch(
-    `/api/v3/research/selection/manager-decision?target_trade_date=${encodeURIComponent(targetTradeDate)}`,
+    `/api/v4/research/selection/manager-decision?target_trade_date=${encodeURIComponent(targetTradeDate)}`,
     requestInit,
   );
   if (!response.ok) {

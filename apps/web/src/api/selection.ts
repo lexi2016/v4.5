@@ -22,7 +22,7 @@ export async function loadSelectionExact(
   const requestInit: RequestInit = { cache: "no-store" };
   if (signal) requestInit.signal = signal;
   const response = await fetch(
-    `/api/v3/research/selection?target_trade_date=${encodeURIComponent(targetTradeDate)}`,
+    `/api/v4/research/selection?target_trade_date=${encodeURIComponent(targetTradeDate)}`,
     requestInit,
   );
   if (!response.ok) {

@@ -1,7 +1,7 @@
 /** Read-only stock summary, not a ranking / BUY / trading instruction contract. */
 import { normalizedWorkspaceDay, validateDailyChannels, validateWorkspaceDateBindings,
-  type DailyChannels, type WorkspaceDateBindings, type WorkspaceRequestDateBindings } from '../manager-selection/dailyChannels.js';
-export type { WorkspaceDateBindings, WorkspaceRequestDateBindings } from '../manager-selection/dailyChannels.js';
+  type DailyChannels, type WorkspaceDateBindings, type WorkspaceRequestDateBindings } from '../manager-selection/dailyChannels';
+export type { WorkspaceDateBindings, WorkspaceRequestDateBindings } from '../manager-selection/dailyChannels';
 export type JsonObject = Record<string, unknown>;
 export interface WorkspaceLane extends JsonObject {
   lane: 'STAGE' | 'CATALYST' | 'CLOSE'; owner: string; state: string; target_date: string;
@@ -73,9 +73,23 @@ export interface UsDailyMappingRun extends ResearchReadOnlyFlags {
   target_trade_date: string; status: 'NOT_RUN' | 'FAILED' | 'INPUT_MISSING' | 'CANNOT_CONFIRM' | 'PARTIAL' | 'COMPLETED' | 'VALID_EMPTY';
   run_id: string | null; generated_at: string | null; us_session_date: string | null; research_cutoff: string | null;
   coverage: JsonObject; matches: JsonObject[]; gaps: string[]; source_identity: JsonObject | null;
-  input_identity?: string | null; symbol_assessments?: UsSymbolAssessment[];
-  relation_evidence?: JsonObject; relation_assessment_identity?: string | null;
-  relation_source_identities?: JsonObject[];
+  artifact_sha256?: string | null; input_identity?: string | null;
+  symbol_assessments?: UsSymbolAssessment[]; relation_evidence?: JsonObject;
+  relation_assessment_identity?: string | null; relation_source_identities?: JsonObject[];
+  execution_context?: ResearchExecutionContext; run_readback?: ResearchRunReadback;
+}
+export type ResearchTriggerKind = 'SCHEDULED' | 'MANUAL' | 'UNKNOWN';
+export type ResearchExecutionTiming = 'ON_TIME' | 'LATE_CATCHUP' | 'RETROSPECTIVE' | 'UNCLASSIFIED';
+export interface ResearchExecutionContext extends JsonObject {
+  trigger_kind: ResearchTriggerKind; timing: ResearchExecutionTiming;
+  scheduled_for: string | null; started_at: string | null; finished_at: string | null;
+  natural_run_verified: false;
+}
+export interface ResearchRunReadback extends JsonObject {
+  status: 'VERIFIED' | 'CANNOT_CONFIRM'; target_trade_date: string | null;
+  run_id: string | null; artifact_sha256: string | null; owner: string; read_at: string | null;
+  input_identity?: string | null; owner_attempt_run_id?: string | null; owner_attempt_sha256?: string | null;
+  owner_attempt_state?: string | null; owner_finished_at?: string | null;
 }
 export interface UsMappingResearch extends ResearchReadOnlyFlags {
   schema_version: 'v4.manager_research.us_mapping_research.v1'; target_trade_date: string;
@@ -190,6 +204,7 @@ export interface ManagerWorkspace extends JsonObject {
   market_screen?: ReboundScreen; market_screen_evidence?: JsonObject;
   us_market_attention?: UsMarketAttention; research_attention?: ResearchAttention;
   us_mapping_research?: UsMappingResearch;
+  plan_product?: JsonObject; workspace_plan_attempt?: JsonObject; plan_context?: JsonObject;
   selection_diagnostics?: SelectionDiagnostics;
   date_bindings?: WorkspaceDateBindings; daily_channels?: DailyChannels;
 }
@@ -866,17 +881,24 @@ function nonEmptyObjectRecords(value: unknown): value is JsonObject[] {
   return Array.isArray(value) && value.length > 0 && value.every(isJsonObject);
 }
 
+function sourceContentIdentitySha(ref: JsonObject): string | null {
+  const payloadFieldsPresent = ref.payload_path !== undefined || ref.payload_sha256 !== undefined;
+  const payloadSha = researchText(ref.payload_path) && researchSha(ref.payload_sha256) ? ref.payload_sha256 : null;
+  if (payloadFieldsPresent && payloadSha === null) return null;
+  const artifactFieldsPresent = ref.artifact_path !== undefined || ref.artifact_sha256 !== undefined;
+  const artifactSha = researchText(ref.artifact_path) && researchSha(ref.artifact_sha256) ? ref.artifact_sha256 : null;
+  if (artifactFieldsPresent && artifactSha === null) return null;
+  return payloadSha ?? artifactSha;
+}
+
 function validTrendEvidence(row: JsonObject, screenSession: string | null): boolean {
   return row.evidence_class === 'VERIFIED_SCREEN_HISTORY_TREND' && screenSession !== null &&
     sessionDay(row.verified_session) === screenSession &&
     typeof row.recent_3_session_return_pct === 'number' && Number.isFinite(row.recent_3_session_return_pct) && row.recent_3_session_return_pct > 0 &&
     typeof row.recent_5_session_return_pct === 'number' && Number.isFinite(row.recent_5_session_return_pct) && row.recent_5_session_return_pct > 0 &&
     nonEmptyObjectRecords(row.source_refs) && row.source_refs.every(ref =>
-      typeof ref.owner === 'string' && !!ref.owner.trim() &&
-      typeof ref.payload_path === 'string' && !!ref.payload_path.trim() &&
-      /^[0-9a-f]{64}$/.test(String(ref.payload_sha256)) &&
-      typeof ref.manifest_path === 'string' && !!ref.manifest_path.trim() &&
-      /^[0-9a-f]{64}$/.test(String(ref.manifest_sha256)));
+      researchText(ref.owner) && sourceContentIdentitySha(ref) !== null &&
+      researchText(ref.manifest_path) && researchSha(ref.manifest_sha256));
 }
 
 function validUsIndustryMapping(row: JsonObject, start: number, cutoff: number): boolean {
@@ -1051,6 +1073,96 @@ function researchContract(ok: unknown, code: string): asserts ok {
 }
 function researchText(raw: unknown): raw is string { return typeof raw === 'string' && !!raw.trim(); }
 function researchSha(raw: unknown): raw is string { return typeof raw === 'string' && /^[0-9a-f]{64}$/.test(raw); }
+function researchRun(raw: unknown): raw is string {
+  return typeof raw === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/.test(raw);
+}
+function researchAwareEpoch(raw: unknown): number | null {
+  if (typeof raw !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(raw) ||
+      normalizedWorkspaceDay(raw.slice(0, 10)) === null) return null;
+  const value = Date.parse(raw);
+  return Number.isFinite(value) ? value : null;
+}
+function validateResearchExecutionContext(raw: unknown): void {
+  const context = object(raw);
+  researchContract(['SCHEDULED', 'MANUAL', 'UNKNOWN'].includes(String(context.trigger_kind)) &&
+    ['ON_TIME', 'LATE_CATCHUP', 'RETROSPECTIVE', 'UNCLASSIFIED'].includes(String(context.timing)) &&
+    context.natural_run_verified === false, 'RESEARCH_EXECUTION_CONTEXT');
+  for (const key of ['scheduled_for', 'started_at', 'finished_at']) {
+    const value = context[key];
+    researchContract(value === null || researchAwareEpoch(value) !== null, 'RESEARCH_EXECUTION_TIME');
+  }
+  const started = researchAwareEpoch(context.started_at);
+  const finished = researchAwareEpoch(context.finished_at);
+  researchContract(started === null || finished === null || finished >= started,
+    'RESEARCH_EXECUTION_ORDER');
+  if (context.trigger_id !== undefined && context.trigger_id !== null)
+    researchContract(typeof context.trigger_id === 'string' && /^[0-9a-f]{64}$/.test(context.trigger_id),
+      'RESEARCH_EXECUTION_TRIGGER');
+}
+function validateResearchRunReadback(raw: unknown, expected: {
+  target: string; runId: unknown; sha256: unknown; generatedAt?: unknown;
+  inputIdentity?: unknown; owner?: string;
+}): void {
+  const readback = object(raw);
+  researchContract(['VERIFIED', 'CANNOT_CONFIRM'].includes(String(readback.status)) &&
+    (readback.status === 'VERIFIED'
+      ? readback.target_trade_date === expected.target
+      : readback.target_trade_date === null || readback.target_trade_date === expected.target) && researchText(readback.owner) &&
+    (readback.run_id === null || researchRun(readback.run_id)) &&
+    (readback.artifact_sha256 === null || researchSha(readback.artifact_sha256)) &&
+    (readback.read_at === null || researchAwareEpoch(readback.read_at) !== null), 'RESEARCH_RUN_READBACK');
+  if (expected.owner !== undefined)
+    researchContract(readback.owner === expected.owner, 'RESEARCH_RUN_READBACK_OWNER');
+  if (readback.status === 'VERIFIED') {
+    researchContract(researchRun(expected.runId) && researchSha(expected.sha256) &&
+      readback.run_id === expected.runId && readback.artifact_sha256 === expected.sha256 &&
+      researchAwareEpoch(readback.read_at) !== null, 'RESEARCH_RUN_READBACK_IDENTITY');
+    if (expected.inputIdentity !== undefined)
+      researchContract(readback.input_identity === expected.inputIdentity, 'RESEARCH_RUN_READBACK_INPUT');
+    const generated = researchAwareEpoch(expected.generatedAt);
+    const readAt = researchAwareEpoch(readback.read_at);
+    researchContract(generated !== null && readAt !== null && readAt >= generated,
+      'RESEARCH_RUN_READBACK_TIME');
+  } else {
+    if (readback.run_id !== null)
+      researchContract(readback.run_id === expected.runId, 'RESEARCH_RUN_READBACK_IDENTITY');
+    if (readback.artifact_sha256 !== null)
+      researchContract(readback.artifact_sha256 === expected.sha256, 'RESEARCH_RUN_READBACK_IDENTITY');
+  }
+}
+function validatePlanProductReadback(workspace: JsonObject): void {
+  if (workspace.plan_product === undefined) return;
+  const product = object(workspace.plan_product);
+  if (product.execution_context !== undefined && product.execution_context !== null)
+    validateResearchExecutionContext(product.execution_context);
+  if (product.run_readback === undefined) return;
+  validateResearchRunReadback(product.run_readback, {
+    target: String(workspace.target_trade_date), runId: product.run_id, sha256: product.sha256,
+    generatedAt: product.generated_at, inputIdentity: workspace.input_identity,
+    owner: 'ManagerResearchJobService.refresh_workspace_plan',
+  });
+  const readback = object(product.run_readback);
+  if (readback.status === 'VERIFIED') {
+    const attemptState = readback.owner_attempt_state;
+    researchContract(product.consumed === true &&
+      ['CURRENT', 'ALREADY_MATERIALIZED', 'PRESERVED_SCHEDULED_PREOPEN'].includes(String(product.status)) &&
+      readback.owner_attempt_run_id === product.run_id && researchSha(readback.owner_attempt_sha256) &&
+      ['SUCCEEDED', 'SUCCEEDED_EMPTY', 'PARTIAL'].includes(String(attemptState)) &&
+      researchAwareEpoch(readback.owner_finished_at) !== null &&
+      researchAwareEpoch(readback.owner_finished_at)! >= researchAwareEpoch(product.generated_at)!,
+      'PLAN_PRODUCT_READBACK_ATTEMPT');
+  } else {
+    for (const key of ['owner_attempt_run_id', 'owner_attempt_sha256', 'owner_attempt_state', 'owner_finished_at']) {
+      const value = readback[key];
+      researchContract(value === null || value === undefined ||
+        (key === 'owner_attempt_run_id' ? researchRun(value) :
+          key === 'owner_attempt_sha256' ? researchSha(value) :
+            key === 'owner_finished_at' ? researchAwareEpoch(value) !== null : researchText(value)),
+        'PLAN_PRODUCT_READBACK_UNVERIFIED');
+    }
+  }
+}
 function observationTime(raw: unknown): number {
   const m=typeof raw==='string' ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.exec(raw) : null;
   const stamp=explicitTimestamp(raw);
@@ -1218,10 +1330,10 @@ function validateResearchSelectionLedger(raw: unknown, date: string, attentionCa
     records(refs);
     const identities=new Set<string>();
     for(const ref of refs){
-      const owner=ref.owner,payload=ref.payload_sha256,manifest=ref.manifest_sha256;
-      researchContract(researchText(owner) && researchText(ref.payload_path) && researchText(ref.manifest_path) &&
-        researchSha(payload) && researchSha(manifest),'RESEARCH_SELECTION_SOURCE_REF');
-      identities.add(`${payload}:${manifest}`);
+      const contentSha=sourceContentIdentitySha(ref),manifest=ref.manifest_sha256;
+      researchContract(researchText(ref.owner) && contentSha !== null && researchText(ref.manifest_path) &&
+        researchSha(manifest),'RESEARCH_SELECTION_SOURCE_REF');
+      identities.add(`${contentSha}:${manifest}`);
     }
     if(required)researchContract(refs.length>=2 && identities.size>=2,'RESEARCH_SELECTION_SOURCE_REF_COUNT');
   };
@@ -1389,11 +1501,14 @@ function validateUsMappingResearch(raw: unknown, date: string): UsMappingResearc
     daily.target_trade_date===date && ['NOT_RUN','FAILED','INPUT_MISSING','CANNOT_CONFIRM','PARTIAL','COMPLETED','VALID_EMPTY'].includes(String(daily.status)),
     'US_MAPPING_DATE_OR_STATUS');
   const coverage=object(daily.coverage);records(daily.matches);strings(daily.gaps);
-  for(const key of ['reviewed_us_symbol_count','matched_us_symbol_count','matched_hk_relation_count','configured_us_universe_count',
-    'available_us_universe_count']){
-    const n=coverage[key];if(n!==null)count(n);
-  }
-  researchContract(coverage.full_market_coverage===false,'US_MAPPING_COVERAGE_SCOPE');
+  if(daily.execution_context!==undefined && daily.execution_context!==null)
+    validateResearchExecutionContext(daily.execution_context);
+  if(daily.run_readback!==undefined)
+    validateResearchRunReadback(daily.run_readback,{
+      target:date,runId:daily.run_id,sha256:daily.artifact_sha256,generatedAt:daily.generated_at,
+    });
+  if(daily.artifact_sha256!==undefined && daily.artifact_sha256!==null)
+    researchContract(researchSha(daily.artifact_sha256),'US_MAPPING_ARTIFACT_SHA');
   if(daily.input_identity!==undefined && daily.input_identity!==null)
     researchContract(researchSha(daily.input_identity),'US_MAPPING_INPUT_IDENTITY');
   if(daily.relation_assessment_identity!==undefined && daily.relation_assessment_identity!==null)
@@ -1440,6 +1555,11 @@ function validateUsMappingResearch(raw: unknown, date: string): UsMappingResearc
       },date);
     }
   }
+  for(const key of ['reviewed_us_symbol_count','matched_us_symbol_count','matched_hk_relation_count','configured_us_universe_count',
+    'available_us_universe_count']){
+    const n=coverage[key];if(n!==null)count(n);
+  }
+  researchContract(coverage.full_market_coverage===false,'US_MAPPING_COVERAGE_SCOPE');
   if(daily.status==='COMPLETED'||daily.status==='VALID_EMPTY'){
     const identity=object(daily.source_identity);
     researchContract(daily.source_status==='READY' && typeof daily.run_id==='string' &&
@@ -1501,6 +1621,7 @@ function validateUsMappingResearch(raw: unknown, date: string): UsMappingResearc
   return mapping as unknown as UsMappingResearch;
 }
 
+
 export function validateManagerWorkspace(raw: unknown, date: string, expectedBindings?: WorkspaceRequestDateBindings): ManagerWorkspace {
   const value = object(raw); safe(value);
   if(value.selection_diagnostics!==undefined)validateSelectionDiagnostics(value.selection_diagnostics,date);
@@ -1509,6 +1630,7 @@ export function validateManagerWorkspace(raw: unknown, date: string, expectedBin
   if(value.us_mapping_research!==undefined)validateUsMappingResearch(value.us_mapping_research,date);
   if (value.schema_version !== 'v4.manager_research.workspace.v1' || value.target_trade_date !== date ||
       typeof value.input_identity !== 'string' || !/^[0-9a-f]{64}$/.test(value.input_identity)) throw new Error('WORKSPACE_IDENTITY_INVALID');
+  validatePlanProductReadback(value);
   records(value.stocks); records(value.lanes); records(value.themes); records(value.materials); strings(value.gaps);
   if(value.semantic_version!=='20260921.manager-semantic.r3.v1')throw new Error('WORKSPACE_SEMANTIC_RECOMPUTE_REQUIRED');
   strings(value.focus_symbols); records(value.company_events); records(value.rejected_relations);object(value.briefing);
@@ -1584,14 +1706,26 @@ export function validateManagerWorkspace(raw: unknown, date: string, expectedBin
     const coverage = object(screen.coverage);
     const inputCount = coverage.input_candidate_count ?? coverage.amount_gate_candidate_count;
     const nearCount = coverage.near_count ?? coverage.near_selected_count;
-    count(inputCount); count(coverage.history_complete_count); count(coverage.history_pending_count);
-    count(coverage.strict_count); count(coverage.near_candidate_count); count(nearCount); count(coverage.selected_count);
-    if (coverage.selected_count !== screen.cards.length || coverage.strict_count !== screen.strict.length ||
-        nearCount !== screen.near.length || coverage.near_candidate_count !== nearCount ||
-        coverage.history_pending_count !== screen.pending.length ||
-        inputCount !== coverage.history_complete_count + coverage.history_pending_count ||
-        coverage.selected_count !== coverage.strict_count + nearCount)
+    if (coverage.counts_known !== undefined && typeof coverage.counts_known !== 'boolean')
       throw new Error('WORKSPACE_SCREEN_COUNT_INVALID');
+    if (coverage.counts_known === false) {
+      const unknownCounts = ['input_candidate_count', 'history_complete_count', 'history_pending_count',
+        'strict_count', 'near_candidate_count', 'near_count', 'selected_count', 'panel_row_count', 'panel_code_count'];
+      if (screen.status !== 'CANNOT_CONFIRM' || screen.main_screen_ready !== false ||
+          screen.input_identity !== null || screen.authority !== null ||
+          screen.cards.length || screen.strict.length || screen.near.length || screen.pending.length ||
+          unknownCounts.some(key => coverage[key] !== null))
+        throw new Error('WORKSPACE_SCREEN_COUNT_INVALID');
+    } else {
+      count(inputCount); count(coverage.history_complete_count); count(coverage.history_pending_count);
+      count(coverage.strict_count); count(coverage.near_candidate_count); count(nearCount); count(coverage.selected_count);
+      if (coverage.selected_count !== screen.cards.length || coverage.strict_count !== screen.strict.length ||
+          nearCount !== screen.near.length || coverage.near_candidate_count !== nearCount ||
+          coverage.history_pending_count !== screen.pending.length ||
+          inputCount !== coverage.history_complete_count + coverage.history_pending_count ||
+          coverage.selected_count !== coverage.strict_count + nearCount)
+        throw new Error('WORKSPACE_SCREEN_COUNT_INVALID');
+    }
     for (const card of screen.cards) {
       if (!['STRICT_REBOUND','NEAR_CONDITION'].includes(String(card.classification)) ||
           typeof card.code !== 'string' || !/^HK\.(?!00000)\d{5}$/.test(card.code) || typeof card.name !== 'string' ||
@@ -1630,9 +1764,6 @@ export function validateManagerWorkspace(raw: unknown, date: string, expectedBin
     }
   }
   if(value.research_attention!==undefined)validateResearchAttention(value.research_attention,date,verifiedScreenSession);
-  // Daily-channel data is optional for legacy payloads. Once present, its
-  // dates, rows, source references, run, and safety flags are checked against
-  // the exact plan response before the renderer can show it as verified.
   validateResearchDisplayConsistency(value);
   validateReadContext(value);
   // An explicit source date must be confirmed by the response. Legacy
@@ -1641,12 +1772,9 @@ export function validateManagerWorkspace(raw: unknown, date: string, expectedBin
       (expectedBindings?.selection_date !== undefined || expectedBindings?.announcement_date !== undefined))
     throw new Error('WORKSPACE_DAILY_DATE_BINDING_MISSING');
   if (value.date_bindings !== undefined) {
-    const bindings=validateWorkspaceDateBindings(value.date_bindings,date,expectedBindings);
-    if (value.daily_channels !== undefined) validateDailyChannels(value.daily_channels,bindings,value);
-  } else if (value.daily_channels !== undefined) {
-    throw new Error('WORKSPACE_DAILY_DATE_BINDING_INVALID');
-  }
-  validateReadContext(value);
+    const bindings = validateWorkspaceDateBindings(value.date_bindings, date, expectedBindings);
+    if (value.daily_channels !== undefined) validateDailyChannels(value.daily_channels, bindings, value);
+  } else if (value.daily_channels !== undefined) throw new Error('WORKSPACE_DAILY_DATE_BINDING_INVALID');
   return value as unknown as ManagerWorkspace;
 }
 async function parseWorkspaceResponse(response: Response, date: string, expectedBindings?: WorkspaceRequestDateBindings): Promise<ManagerWorkspace> {
@@ -1708,20 +1836,21 @@ export async function refreshManagerAnnouncements(date: string, signal: AbortSig
 }
 
 /** Explicit user action: original owner reuses existing input, never a crawler. */
-export async function refreshManagerWorkspace(date: string, signal: AbortSignal, bindings?: WorkspaceRequestDateBindings): Promise<ManagerWorkspace> {
-  if (normalizedWorkspaceDay(date) !== date) throw new Error('WORKSPACE_DATE_REQUIRED');
-  const query = new URLSearchParams({ date });
+export async function refreshManagerWorkspace(date: string, signal: AbortSignal,
+    bindings?: WorkspaceRequestDateBindings): Promise<ManagerWorkspace> {
+  if (!/^\d{8}$/.test(date)) throw new Error('WORKSPACE_DATE_REQUIRED');
+  const params = new URLSearchParams({date});
   if (bindings?.selection_date !== undefined) {
     const selection = normalizedWorkspaceDay(bindings.selection_date);
     if (!selection) throw new Error('WORKSPACE_SELECTION_DATE_INVALID');
-    query.set('selection_date', selection);
+    params.set('selection_date', selection);
   }
   if (bindings?.announcement_date !== undefined) {
     const announcement = normalizedWorkspaceDay(bindings.announcement_date);
     if (!announcement) throw new Error('WORKSPACE_ANNOUNCEMENT_DATE_INVALID');
-    query.set('announcement_date', announcement);
+    params.set('announcement_date', announcement);
   }
-  const response = await fetch(`/api/v4/manager/research/workspace/refresh?${query}`, {
+  const response = await fetch(`/api/v4/manager/research/workspace/refresh?${params.toString()}`, {
     method: 'POST', signal, credentials: 'same-origin', cache: 'no-store',
   });
   if (!response.ok) throw new Error(`WORKSPACE_REFRESH_HTTP_${response.status}`);

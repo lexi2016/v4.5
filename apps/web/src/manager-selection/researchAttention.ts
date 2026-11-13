@@ -1,4 +1,4 @@
-import type { JsonObject, ResearchAttention, ResearchSelectionLedger, SelectionDiagnostics, UsDailyMappingRun, UsMappingResearch, UsMarketAttention } from '../api/managerWorkspace.js';
+import type { JsonObject, ResearchAttention, ResearchSelectionLedger, UsDailyMappingRun, UsMappingResearch, UsMarketAttention, SelectionDiagnostics } from '../api/managerWorkspace.js';
 
 const text=(value:unknown,fallback='未知')=>typeof value==='string'&&value.trim()?value:fallback;
 const dateLabel=(value:unknown)=>typeof value==='string'&&/^\d{8}$/.test(value)?`${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}`:text(value);
@@ -21,38 +21,6 @@ function evidenceDetails(row:JsonObject):HTMLElement{
   const link=sourceLink(row.source_url);if(link)body.append(link);
   const us=row.us_mover as JsonObject|undefined;if(us)body.append(el('p',`US：${text(us.label,text(us.symbol))} ${String(us.pct_change??us.change_pct??'')}%；此处只表示已核关系后的研究映射。`));
   node.append(body);return node;
-}
-
-function renderRelationships(article:HTMLElement, card:JsonObject):void{
-  const relationships=Array.isArray(card.research_relationships)?card.research_relationships:[];
-  const evidence=Array.isArray(card.evidence)?card.evidence as JsonObject[]:[];
-  for(const raw of relationships){
-    const row=object(raw);
-    // Display only an explanation attached to a mapping that passed the original
-    // card validator. Never promote a standalone relationship label into evidence.
-    const bound=evidence.find(e=>{
-      const r=object(e.hk_relation),m=object(e.us_mover);
-      return e.evidence_lane===row.lane&&r.symbol===card.symbol&&row.symbol===card.symbol&&
-        (m.symbol??m.label)===row.us_signal&&r.issuer_quote===row.evidence_quote&&r.direction===row.direction;
-    });
-    if(!bound)continue;
-    const relation=object(bound.hk_relation),section=el('section','','research-relationship');
-    section.dataset.researchRelationship=String(row.lane)+':'+String(row.us_signal);
-    section.append(el('h5',`美股关系：${text(row.us_signal)}`),
-      el('p',`美股关联原文方向：${text(row.direction)}；关联不等于受益或买入。`),
-      el('blockquote',text(row.evidence_quote)));
-    const mirror=relation.issuer_time_basis==='MIRROR_DISPLAY_TIME_NOT_HKEX_FIRST_PUBLICATION';
-    const standing=relation.relation_temporal_role==='STANDING_RELATION_NOT_NEW_CATALYST';
-    section.append(el('p',`${mirror?'镜像可见（非HKEX首次发布时间）':'原文发布时间'}：${text(mirror?relation.issuer_mirror_observed_at:row.published_at)}；原关系取得：${text(relation.issuer_available_at)}；双来源最晚取得：${text(row.acquired_at)}。`));
-    if(standing){const validity=object(relation.standing_validity);section.append(el('p',`长期关系，不是今天新增催化；源内有效期：${text(validity.valid_from)} 至 ${text(validity.valid_until)}。`));}
-    for(const caution of Array.isArray(relation.issuer_cautions)?relation.issuer_cautions:[])
-      section.append(el('p',`本公司风险原文（非特定US关系因果）：${text(object(caution).quote)}`));
-    section.append(el('p',text(row.observation_condition)),el('p',text(row.invalidation)));
-    for(const ref of Array.isArray(relation.source_refs)?relation.source_refs:[]){
-      const r=object(ref),link=sourceLink(r.source_url??r.url);if(link)section.append(link);
-    }
-    article.append(section);
-  }
 }
 
 function renderGaps(host:HTMLElement, label:string, gaps: string[] | undefined):void {
@@ -79,6 +47,66 @@ function renderFormalSelection(host:HTMLElement, diagnostics?:SelectionDiagnosti
   }
   host.append(box);
 }
+function renderIndependentObservations(host:HTMLElement, attention?:ResearchAttention):void {
+  const box=el('section');box.setAttribute('aria-label','独立公告研究观察');box.dataset.observationOnly='';
+  const o=attention?.observation_only;
+  if(!o){box.append(el('h4','独立公告观察未提供 · CANNOT_CONFIRM'),el('p','数量未知；不以 scored cards 为空推断没有公告观察。'));}
+  else {
+    box.append(el('h4',`独立公告观察 ${o.card_count} 条／${o.symbol_count} 股 · ${o.status}`),
+      el('p','仅保留原owner的公告研究观察，不进入 scored cards／focus／BUY。来源非穷尽，不能据此断言全市场没有利好。'));
+    if(!o.cards.length)box.append(el('p','未保留可展示观察；不等于全市场无正向公告。'));
+    // Independent observations are not limited by the existing scored-card display limit.
+    for(const row of o.cards){
+      const article=el('article','','research-observation-card');article.dataset.symbol=row.symbol;
+      const membership=row.target_connect_membership;
+      const state=membership.status==='VERIFIED_TARGET_UNIVERSE'?'目标日名单已核（仍仅研究观察）':
+        membership.status==='NOT_IN_TARGET_UNIVERSE'?'不在目标日名单（仅研究观察）':'资格未确认 · CANNOT_CONFIRM';
+      article.append(el('h4',`${text(row.name)} · ${row.symbol} · 研究观察`),el('p',text(row.title,'公告标题未提供')),
+        el('p',`${state}；${text(membership.reason)}。不授予正式选股资格。`),el('blockquote',String(row.support.quote)),
+        el('p',`公开时间 ${row.published_at}；retrieved_at ${row.retrieved_at}；available_at ${row.available_at}。只显示原字段，不互相替代。`));
+      if(row.research_note)article.append(el('p',text(row.research_note)));
+      const proof=el('details');proof.append(el('summary','公告原文与证据身份'),
+        el('p',`event_id ${row.event_id}；proposition_id ${text(row.proposition_id)}；document SHA256 ${row.document_sha256}`));
+      for(const ref of row.evidence){const link=sourceLink(ref.source_url);if(link)proof.append(link);}
+      const raw=el('pre',JSON.stringify(row.evidence,null,2));raw.style.whiteSpace='pre-wrap';raw.style.overflowWrap='anywhere';proof.append(raw);
+      article.append(proof);box.append(article);
+    }
+    renderGaps(box,'独立观察拒绝原因',o.rejections.map(row=>`${text(row.symbol,'未标主体')}：${text(row.reason)}`));
+  }
+  host.append(box);
+}
+function renderInputDiagnostics(host:HTMLElement, attention?:ResearchAttention):void {
+  const box=el('section');box.dataset.inputDiagnostics='';box.setAttribute('aria-label','研究来源覆盖与缺口');box.append(el('h4','研究来源覆盖与缺口（分来源）'));
+  const d=attention?.input_diagnostics;
+  if(!d)box.append(el('p','来源诊断未提供 · CANNOT_CONFIRM；覆盖未知，不能将缺字段解释为 READY 或有效零。'));
+  else {
+    const official=d.official_announcements,c=official.coverage;
+    const n=(raw:unknown)=>typeof raw==='number' && Number.isSafeInteger(raw)&&raw>=0?String(raw):'未知';
+    box.append(el('h4',`HKEX 官方公告 · ${official.status}`),el('p',`已观察文档 ${n(c.observed_document_count)}；已查询主体 ${n(c.queried_issuer_count)}／来源名单 ${n(c.native_master_count)}。${c.all_official_announcements_captured===true?'原owner声明完整覆盖':'覆盖非穷尽／完整性未确认'}；不表示全部公告均属正向事件。`));
+    const coverage=el('details');coverage.append(el('summary','来源覆盖原始字段（不推断未提供项）'));
+    const coverageRaw=el('pre',JSON.stringify(c,null,2));coverageRaw.style.whiteSpace='pre-wrap';coverageRaw.style.overflowWrap='anywhere';
+    coverage.append(coverageRaw);box.append(coverage);
+    renderGaps(box,'HKEX 来源缺口',official.gaps);
+    const east=d.eastmoney_selection;
+    box.append(el('h4',`东方财富 selection · ${east.status}`),el('p',`范围过滤后的输入文档 ${east.document_count} 条；非穷尽，聚合镜像不是 HKEX 官方目录。不能将旧样本或过窗样本作为当日新利好。`));
+    renderGaps(box,'东方财富来源缺口',east.gaps);
+    const us=d.us_relations;
+    const assessment:Record<string,string>={NOT_EVALUATED:'尚未评估',INSUFFICIENT:'证据不足，数量暂不能确认',ASSESSED_ZERO:'已评估，暂无合格关系',ASSESSED_WITH_RELATIONS:'已有合格关系'};
+    box.append(el('h4',`美股关系 · ${us.status} · ${assessment[us.assessment_state]}`),
+      el('p',`关系材料完整性 ${us.material_complete?'原owner声明完整':'未确认'}；时间字段定位 ${us.acquisition_field_location}。不以 collected_at／first_seen_at 补造采集时间；发布时间不替代 available_at／retrieved_at，时间合法也仍需独立主体关系证据。`));
+    renderGaps(box,'美股来源缺口',us.gaps);
+    for(const [name,scope] of Object.entries(d.scope)){
+      const s=el('details');s.append(el('summary',`${name==='announcements'?'公告':name==='screen'?'量价':name}研究输入范围 · ${scope.status}`),
+        el('p',`目标日 ${scope.target_trade_date}；计数按输入列表，不是去重股票数。`));
+      for(const [key,counts] of Object.entries(scope.counts))s.append(el('p',`${key}：输入 ${counts.input}，准入 ${counts.admitted}，拒绝 ${counts.rejected}`));
+      for(const [reason,count] of Object.entries(scope.rejection_reasons))s.append(el('p',`${reason}：${count}`));
+      renderGaps(s,'范围与资格缺口',scope.gaps);box.append(s);
+    }
+  }
+  renderGaps(box,'研究注意力总体缺口',attention?.gaps);
+  host.append(box);
+}
+
 function renderResearchSelectionLedger(host:HTMLElement, ledger?:ResearchSelectionLedger):void{
   const box=el('section');box.dataset.researchSelectionLedger='';
   const dateMatch=ledger?.target_trade_date.match(/^\d{4}(\d{2})(\d{2})$/);
@@ -379,7 +407,8 @@ export function renderResearchAttention(host:HTMLElement, attention?:ResearchAtt
   if(!attention){
     host.append(el('p',`研究优先级未读取，优先级未知且不等于0只。下方仅显示已绑定的美股 owner 原始数据；不代表关系映射或选股。${recheckLabel}`));
   }else{
-    host.append(el('p',`状态 ${attention.status}；cutoff ${text(attention.research_cutoff)}。评分配置 ${text((attention.config as JsonObject).version)}，状态 ${text((attention.config as JsonObject).status)}。研究排序先按证据状态，再用既有proposal分数和PIT时点打破同组并列；不写回原rank/Stage/BUY。`));
+    const displayedStatus=attention.observation_only && attention.input_diagnostics ? attention.status : `CANNOT_CONFIRM（新增诊断未提供；原始状态 ${attention.status}）`;
+    host.append(el('p',`状态 ${displayedStatus}；cutoff ${text(attention.research_cutoff)}。评分配置 ${text((attention.config as JsonObject).version)}，状态 ${text((attention.config as JsonObject).status)}。研究排序先按证据状态，再用既有proposal分数和PIT时点打破同组并列；不写回原rank/Stage/BUY。`));
     const configuredLimit=Number((attention.config as JsonObject|undefined)?.display_limit);
     const displayLimit=Number.isSafeInteger(configuredLimit)&&configuredLimit>0&&configuredLimit<=100?configuredLimit:30;
     for(const raw of attention.cards.slice(0,displayLimit)){
@@ -397,10 +426,11 @@ export function renderResearchAttention(host:HTMLElement, attention?:ResearchAtt
       article.append(el('p',`证据时点：公开 ${text(card.freshest_published_at,'未知')}；系统取得 ${text(card.freshest_acquired_at,'未知')}。两类时间不互相替代。`));
       const missing=(card.missing as string[]||[]);if(missing.length)article.append(el('p',`仍缺：${missing.join('；')}`));
       for(const evidence of (card.evidence as JsonObject[]||[]).slice(0,6))article.append(evidenceDetails(evidence));
-      renderRelationships(article,card);
       host.append(article);
     }
   }
+  renderInputDiagnostics(host,attention);
+  renderIndependentObservations(host,attention);
   const raw=el('details');raw.append(el('summary','美股原始上涨发现（即使没有合格港股映射也保留）'));
   if(!us){raw.append(el('p','US owner 未绑定/未读取，覆盖未知。'));}
   else{

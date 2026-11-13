@@ -1,7 +1,7 @@
 import { renderAnnouncementReview } from './announcementObservation.js';
 import { renderResearchAttention } from './researchAttention.js';
-import { readDailyDateBindings, renderDailyChannels } from './dailyChannels.js';
-import type { ResearchAttention, SelectionDiagnostics, UsMappingResearch, UsMarketAttention } from '../api/managerWorkspace.js';
+import { normalizedWorkspaceDay, renderDailyChannels, workspaceRequestDateBindings } from './dailyChannels.js';
+import type { ResearchAttention, UsMappingResearch, UsMarketAttention } from '../api/managerWorkspace.js';
 import { businessStatusRows } from './businessStatus.js';
 /** Stock-keyed panel inside the EXISTING ManagerSelectionView host.
  * The original Stage table/rank/BUY gate remain outside this DOM boundary.
@@ -83,17 +83,11 @@ export function groupThemeMappings(theme: JsonObject): ThemeMappingGroup[] {
 export function mountCatalystObservations(host: HTMLElement, initialDate: string): () => void {
   // The page date selects publication-day evidence; plan_date selects only the workspace plan.
   const params=new URLSearchParams(window.location.search);
-  const initialDateRead=readDailyDateBindings(params,initialDate);
-  let defaultDailyBindings=initialDateRead.bindings;
-  const explicitSourceBindings=initialDateRead.requested;
-  const selectionDate=explicitSourceBindings.selection_date;
-  const displayedDailyBindings=(planDate:string)=>({...defaultDailyBindings,plan_date:planDate});
-  const requestedPublicationDate=params.get('date');
-  const publicationDate=requestedPublicationDate && /^\d{8}$/.test(requestedPublicationDate)
-    ? requestedPublicationDate : initialDate;
-  const requestedPlanDate=params.get('plan_date');
-  let date=requestedPlanDate && /^\d{8}$/.test(requestedPlanDate) ? requestedPlanDate : initialDate;
-  let analysisPublicationDate=explicitSourceBindings.announcement_date;
+  const publicationDate=normalizedWorkspaceDay(params.get('date')) ?? initialDate;
+  let date=normalizedWorkspaceDay(params.get('plan_date')) ?? initialDate;
+  const explicitBindings=workspaceRequestDateBindings(params);
+  const selectionDate=explicitBindings.selection_date;
+  let analysisPublicationDate=explicitBindings.announcement_date;
   const requestBindings=()=>({...(selectionDate ? {selection_date:selectionDate} : {}),
     ...(analysisPublicationDate ? {announcement_date:analysisPublicationDate} : {})});
   let analysisSequence=0;let analysisController:AbortController|null=null;
@@ -103,7 +97,7 @@ export function mountCatalystObservations(host: HTMLElement, initialDate: string
   let announcementRefreshTimer:ReturnType<typeof setTimeout>|undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let currentValue: ManagerWorkspace | null = null;
-  let view: 'auto'|'dynamic' = 'auto';
+  let view: 'auto'|'dynamic' = params.get('view')==='dynamic' ? 'dynamic' : 'auto';
   let loadedView: 'auto'|'dynamic' | null = null;
   let loadedBindingsKey: string | null = null;
   let sourceFilter: 'ALL'|'STAGE'|'MATERIAL'|'CLOSE' = 'ALL';
@@ -128,13 +122,14 @@ export function mountCatalystObservations(host: HTMLElement, initialDate: string
   for(const [key,label] of [['auto','当时历史 / 当日预览'],['dynamic','现在回看（可能含后续消息）']]) {
     const option=el('option',label);option.value=key;viewSelect.append(option);
   }
+  viewSelect.value=view;
   viewLabel.append(viewSelect);
   const cancelButton=el('button','取消本次读取');cancelButton.type='button';cancelButton.hidden=true;
   header.append(dateLabel,readButton,refreshButton,viewLabel,cancelButton);
   const status = el('p'); status.setAttribute('role','status'); status.setAttribute('aria-live','polite');
   style.textContent+='.manager-catalyst-observations .business-status{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.manager-catalyst-observations .business-status-row{margin:0}';
   const planIdentity=el('section');planIdentity.setAttribute('aria-label','计划输入身份核对');planIdentity.hidden=true;
-  const dailyChannelsSection=el('section');renderDailyChannels(dailyChannelsSection,undefined,displayedDailyBindings(date));
+  const dailyChannelsSection=el('section');renderDailyChannels(dailyChannelsSection,undefined);
   const runs = el('div','','manager-catalyst-cards'); runs.setAttribute('aria-label','三路运行状态');
   const runSummary=el('p');runSummary.setAttribute('aria-label','三路状态摘要');
   const decisionSummary=el('p','','decision-summary');decisionSummary.setAttribute('aria-label','当前候选摘要');
@@ -174,7 +169,7 @@ export function mountCatalystObservations(host: HTMLElement, initialDate: string
   const auditBody = el('div'); audit.append(auditBody);
   const themeDetails=el('details');themeDetails.dataset.policyDetails='true';themeDetails.append(el('summary','政策与产业线索：适用公司、原文及缺口'),themes);
   const provenance=el('details');provenance.append(el('summary','原owner状态与公司原始分类'),runSummary,runDetails,companyEvents);
-  // One entry for stock attention. Source lists remain audit/context, not rivals.
+  // Core status and results precede the complete, initially collapsed stock audit.
   panel.append(style,header,status,planStatus,planIdentity,dailyChannelsSection,businessStatus,researchFocus,researchAttentionSection,strategy,decisionSummary,rawObservations,closeRecapture,announcementAnalysisSection,themeDetails,announcementSection,provenance,
     el('p','仅研究：事件成立与行情承接、BUY准入分开。未核同口径量价不报触发价；不因高开远离可靠参考位追入，也不预设一定回踩。未读取仓位、未发订单。','decision-safety'),audit);
   host.replaceChildren(panel);
@@ -477,10 +472,10 @@ export function mountCatalystObservations(host: HTMLElement, initialDate: string
   function render(value: ManagerWorkspace): void {
     // Input identity is retained for audit; it is not a stock ranking.
     currentValue=value;loadedView=view;loadedBindingsKey=JSON.stringify(requestBindings());
-    // These fields share the workspace response's date, run, and safety validation.
-    renderDailyChannels(dailyChannelsSection,value.daily_channels,
-      value.date_bindings ?? displayedDailyBindings(value.target_trade_date));
-    renderResearchAttention(researchAttentionSection,value.research_attention as ResearchAttention|undefined,value.us_market_attention as UsMarketAttention|undefined,value.selection_diagnostics as SelectionDiagnostics|undefined,value.us_mapping_research as UsMappingResearch|undefined);
+    // Both fields came through the same workspace response/date/run validator.
+    renderDailyChannels(dailyChannelsSection,value.daily_channels,value.date_bindings);
+    renderResearchAttention(researchAttentionSection,value.research_attention as ResearchAttention|undefined,value.us_market_attention as UsMarketAttention|undefined,
+      value.selection_diagnostics,value.us_mapping_research as UsMappingResearch|undefined);
     panel.dataset.inputIdentity=value.input_identity; panel.dataset.targetDate=value.target_trade_date;panel.dataset.readState='READY';
     renderCloseRecapture(value);
     const ctx=(value.plan_context || {}) as JsonObject;const product=(value.plan_product || {}) as JsonObject;
@@ -573,7 +568,7 @@ export function mountCatalystObservations(host: HTMLElement, initialDate: string
     rawObservations.open=false;rawObservationsSummary.textContent='原始股票观察与来源审计（数量未知）';
     planIdentity.hidden=true;
     for(const node of [stocks,backgroundBody,companyEvents,runs,themes,auditBody,planStatus,businessStatus,planIdentity,researchFocus,closeRecapture])node.replaceChildren();
-    renderDailyChannels(dailyChannelsSection,undefined,displayedDailyBindings(date));
+    renderDailyChannels(dailyChannelsSection,undefined);
     renderScreen(undefined);
     renderResearchAttention(researchAttentionSection,undefined,undefined);
     delete panel.dataset.inputIdentity;delete panel.dataset.targetDate;panel.dataset.readState='LOADING';
@@ -649,14 +644,11 @@ export function mountCatalystObservations(host: HTMLElement, initialDate: string
   }
   async function load(refresh: boolean): Promise<void> {
     const id=++sequence;controller?.abort();clearTimeout(timer);controller=new AbortController();const current=controller;
-    const requestedDate=date;const requestedView=view;const requestedBindings=requestBindings();
+    const requestedDate=date;const requestedView=view;const requestedBindings=requestBindings();let timedOut=false;
     const requestedBindingsKey=JSON.stringify(requestedBindings);
-    const requestedWorkspaceBindings=Object.keys(requestedBindings).length?requestedBindings:undefined;
-    let timedOut=false;
     timer=setTimeout(()=>{timedOut=true;current.abort();},WORKSPACE_REQUEST_TIMEOUT_MS);
     const priorRead=(currentValue?.read_context || {}) as JsonObject;
-    const keep=!!currentValue && currentValue.target_trade_date===date && loadedView===view &&
-      loadedBindingsKey===requestedBindingsKey &&
+    const keep=!!currentValue && currentValue.target_trade_date===date && loadedView===view && loadedBindingsKey===requestedBindingsKey &&
       ['VERIFIED','VERIFIED_WITH_GAPS'].includes(String(priorRead.status));
     if(!keep)clearResults();
     panel.dataset.readState=keep?'UPDATING':'LOADING';
@@ -667,16 +659,12 @@ export function mountCatalystObservations(host: HTMLElement, initialDate: string
     let refreshFailure='';let refreshedValue: ManagerWorkspace | null = null;
     try {
       if(refresh){
-        try { refreshedValue=requestedWorkspaceBindings
-          ? await refreshManagerWorkspace(requestedDate,current.signal,requestedWorkspaceBindings)
-          : await refreshManagerWorkspace(requestedDate,current.signal); }
+        try { refreshedValue=await refreshManagerWorkspace(requestedDate,current.signal,requestedBindings); }
         catch(error){if(current.signal.aborted)throw error;refreshFailure=failureKind(error,false,false)[0];}
       }
       // Reuse successful POST once. Failed POST permits one canonical read,
       // with no retry/poll loop or implicit collection.
-      const value=refreshedValue || (requestedWorkspaceBindings
-        ? await requestManagerWorkspace(requestedDate,current.signal,requestedView,requestedWorkspaceBindings)
-        : await requestManagerWorkspace(requestedDate,current.signal,requestedView));
+      const value=refreshedValue || await requestManagerWorkspace(requestedDate,current.signal,requestedView,requestedBindings);
       if(!disposed && id===sequence && date===requestedDate && view===requestedView){
         render(value);if(refreshFailure)status.textContent+=` 本次生成失败：${refreshFailure} 以下仅为重新核验的读取状态。`;
       }
@@ -699,7 +687,6 @@ export function mountCatalystObservations(host: HTMLElement, initialDate: string
     const next=planDate.value.replace(/-/g,'');
     if(/^\d{8}$/.test(next)){
       date=next;
-      defaultDailyBindings.plan_date=next;
       const url=new URL(window.location.href);
       if(url.searchParams.get('plan_date')!==next){
         url.searchParams.set('plan_date',next);
@@ -709,7 +696,12 @@ export function mountCatalystObservations(host: HTMLElement, initialDate: string
       void load(false);
     }
   };
-  const viewChange=()=>{view=viewSelect.value==='dynamic'?'dynamic':'auto';void load(false);};
+  const viewChange=()=>{
+    view=viewSelect.value==='dynamic'?'dynamic':'auto';
+    const url=new URL(window.location.href);url.searchParams.set('view',view);
+    window.history.replaceState(window.history.state,'',`${url.pathname}${url.search}${url.hash}`);
+    void load(false);
+  };
   const cancelClick=()=>{controller?.abort();};
   planDate.addEventListener('change',dateChange);viewSelect.addEventListener('change',viewChange);cancelButton.addEventListener('click',cancelClick);
   const readClick=()=>{void load(false);};const refreshClick=()=>{void load(true);};

@@ -9,7 +9,7 @@ export async function loadManagerPreselectionExact(
   const requestInit: RequestInit = { cache: "no-store" };
   if (signal) requestInit.signal = signal;
   const response = await fetch(
-    `/api/v3/preselection-pools?date=${encodeURIComponent(targetDate)}&limit=200`,
+    `/api/v4/preselection-pools?date=${encodeURIComponent(targetDate)}&limit=200`,
     requestInit,
   );
   if (!response.ok) {

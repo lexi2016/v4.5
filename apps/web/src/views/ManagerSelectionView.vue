@@ -3052,7 +3052,7 @@ onBeforeUnmount(() => {
     <section v-else-if="state === 'LOADING'" class="manager-state manager-state--loading" aria-busy="true" role="status">
       <p class="manager-eyebrow">READING EXACT LEDGER</p>
       <h2>正在读取 {{ requestedDate }}</h2>
-      <p>等待 V3.5 返回同一 target_trade_date 的不可变研究账本。</p>
+      <p>等待 V4 返回同一 target_trade_date 的不可变研究账本。</p>
     </section>
     <section v-else-if="state === 'STALE' || state === 'ERROR' || state === 'REJECTED'" class="manager-state manager-state--error" role="alert">
       <p class="manager-eyebrow">DATE / READ EVIDENCE</p>

@@ -3,21 +3,6 @@ import { acquiredTime } from '../researchAttention';
 import { decisionSummaryCounts } from '../adapters/workspaceDecision';
 import { businessStatusRows } from '../businessStatus';
 
-const observedNotRun=(date='20260925')=>({
-  schema_version:'v4.manager_research.announcement_observation.v1',target_trade_date:date,
-  status:'NOT_RUN',count_known:false,latest_attempt:null,observations:[],pending_observations:[],
-  official_documents:[],coverage:{},gaps:['ANNOUNCEMENT_OWNER_NOT_RUN'],capture_runs:[],
-});
-const observedNotRunReview=(date='20260925')=>({
-  schema_version:'v4.manager_research.announcement_review.v1',target_trade_date:date,
-  status:'NOT_RUN',gaps:['ANNOUNCEMENT_OWNER_NOT_RUN'],coverage:{},attempt:null,product_identity:null,
-});
-const observedNotRunOwnerChain=()=>({announcements:{
-  owner:'ManagerResearchJobService.refresh_announcements',status:'NOT_RUN',
-  failure_reasons:['ANNOUNCEMENT_OWNER_NOT_RUN'],
-  official_hkex:{source:'HKEX_OFFICIAL',status:'NOT_RUN',attempt:null,product_identity:null},
-}});
-
 describe('manager business completion R3',()=>{
   it('uses persisted acquisition fields without inventing the current time',()=>{
     expect(acquiredTime({first_seen_at:'2026-09-24T10:00:00+08:00'})).toBe('2026-09-24T10:00:00+08:00');
@@ -33,11 +18,10 @@ describe('manager business completion R3',()=>{
     expect(decisionSummaryCounts(value)).toEqual({current:0,background:2,total:2});
   });
 
-  it('shows explicit owner-read NOT_RUN and NOT_MATERIALIZED as business states rather than zero success',()=>{
+  it('shows NOT_RUN and NOT_MATERIALIZED as business states rather than zero success',()=>{
     const rows=businessStatusRows({
       target_trade_date:'20260925',plan_product:{status:'NOT_MATERIALIZED'},
-      announcement_review:observedNotRunReview(),announcement_observation:observedNotRun(),
-      owner_chain:observedNotRunOwnerChain(),us_market_attention:{status:'READY',coverage_scope:'FIXED_SCOPE'},
+      announcement_observation:{status:'NOT_RUN'},us_market_attention:{status:'READY',coverage_scope:'FIXED_SCOPE'},
       research_attention:{status:'READY_WITH_GAPS'},read_context:{status:'VERIFIED_WITH_GAPS'},
       lanes:[
         {lane:'STAGE',state:'UNVERIFIED',last_success_at:null,last_attempt_at:null,failure_reasons:['SELECTION_ARTIFACT_UNAVAILABLE_OR_INVALID']},
@@ -54,58 +38,6 @@ describe('manager business completion R3',()=>{
       expect.objectContaining({label:'15:30',detail:expect.stringContaining('NO_HK_CONNECT_1530_SESSION')}),
     ]));
     expect(rows.every(row=>!row.detail.includes('{'))).toBe(true);
-  });
-
-  it('keeps historical announcement coverage unknown when its observation and owner chain are absent',()=>{
-    const row=businessStatusRows({
-      target_trade_date:'20260930',plan_product:{status:'SOURCE_FAILED'},
-      announcement_review:{schema_version:'v4.manager_research.announcement_review.v1',target_trade_date:'20260930',
-        status:'NOT_RUN',coverage:{},gaps:['HISTORY_ANNOUNCEMENT_COVERAGE_UNKNOWN'],attempt:null,product_identity:null},
-      us_market_attention:{status:'READY',coverage_scope:'FIXED_SCOPE'},research_attention:{status:'READY_WITH_GAPS'},
-      read_context:{status:'SOURCE_FAILED'},lanes:[],
-    } as any).find(item=>item.label==='公告')!;
-    expect(row.state).toBe('无法确认');
-    expect(row.detail).toContain('HISTORY_ANNOUNCEMENT_COVERAGE_UNKNOWN');
-    expect(row.detail).not.toContain('没有 owner attempt');
-    expect(row.detail).not.toContain('HKEX目录未运行');
-    expect(row.next).toContain('Vibe RSS');
-    expect(row.next).toContain('不能替代');
-  });
-
-  it('labels an absent announcement observation as unread, not as a confirmed no-attempt result',()=>{
-    const row=businessStatusRows({target_trade_date:'20260930',plan_product:{status:'SOURCE_FAILED'},
-      us_market_attention:{status:'READY',coverage_scope:'FIXED_SCOPE'},
-      research_attention:{status:'READY_WITH_GAPS'},read_context:{status:'SOURCE_FAILED'},lanes:[]} as any)
-      .find(item=>item.label==='公告')!;
-    expect(row.state).toBe('未读取');
-    expect(row.detail).toContain('不能解释为未运行');
-    expect(row.detail).not.toContain('没有 owner attempt');
-  });
-
-  it('keeps an unbound NOT_RUN observation unknown until its same-date official owner read is present',()=>{
-    const row=businessStatusRows({target_trade_date:'20260930',plan_product:{status:'SOURCE_FAILED'},
-      announcement_review:observedNotRunReview('20260930'),announcement_observation:observedNotRun('20260930'),
-      us_market_attention:{status:'READY',coverage_scope:'FIXED_SCOPE'},
-      research_attention:{status:'READY_WITH_GAPS'},read_context:{status:'SOURCE_FAILED'},lanes:[]} as any)
-      .find(item=>item.label==='公告')!;
-    expect(row.state).toBe('无法确认');
-    expect(row.detail).not.toContain('没有 owner attempt');
-    expect(row.detail).not.toContain('HKEX目录未运行');
-  });
-
-  it('shows SUCCEEDED_EMPTY as a completed empty result, distinct from not run or failure',()=>{
-    const makeRows=(status:string)=>businessStatusRows({
-      target_trade_date:'20260925',plan_product:{status:'NOT_MATERIALIZED'},
-      announcement_review:status==='NOT_RUN'?observedNotRunReview():undefined,
-      announcement_observation:status==='NOT_RUN'?observedNotRun():{status},
-      owner_chain:status==='NOT_RUN'?observedNotRunOwnerChain():undefined,
-      us_market_attention:{status:'READY',coverage_scope:'FIXED_SCOPE'},
-      research_attention:{status:'READY_WITH_GAPS'},read_context:{status:'VERIFIED_WITH_GAPS'},lanes:[],
-    } as any);
-    const row=(status:string)=>makeRows(status).find(item=>item.label==='公告')!;
-    expect(row('SUCCEEDED_EMPTY').state).toContain('空');
-    expect(row('SUCCEEDED_EMPTY').state).not.toBe(row('NOT_RUN').state);
-    expect(row('SUCCEEDED_EMPTY').state).not.toBe(row('FAILED').state);
   });
 
   it('renders the four US relation assessment states in plain Chinese without turning unevaluated into zero',()=>{
@@ -165,14 +97,24 @@ describe('manager business completion R3',()=>{
     expect(stage.state).toBe('到期回执待核');
   });
 
+  it('shows SUCCEEDED_EMPTY as a completed empty result, distinct from not run or failure',()=>{
+    const makeRows=(status:string)=>businessStatusRows({
+      target_trade_date:'20260925',plan_product:{status:'NOT_MATERIALIZED'},
+      announcement_observation:{status},us_market_attention:{status:'READY',coverage_scope:'FIXED_SCOPE'},
+      research_attention:{status:'READY_WITH_GAPS'},read_context:{status:'VERIFIED_WITH_GAPS'},lanes:[],
+    } as any);
+    const row=(status:string)=>makeRows(status).find(item=>item.label==='公告')!;
+    expect(row('SUCCEEDED_EMPTY').state).toContain('空');
+    expect(row('SUCCEEDED_EMPTY').state).not.toBe(row('NOT_RUN').state);
+    expect(row('SUCCEEDED_EMPTY').state).not.toBe(row('FAILED').state);
+  });
+
   it('surfaces an Eastmoney owner run in the top announcement status without claiming HKEX ran',()=>{
     const rows=businessStatusRows({
       target_trade_date:'20260929',plan_product:{status:'NOT_MATERIALIZED'},
-      announcement_review:observedNotRunReview('20260929'),
-      announcement_observation:{...observedNotRun('20260929'),eastmoney_hk_status:'PARTIAL',
+      announcement_observation:{status:'NOT_RUN',latest_attempt:null,eastmoney_hk_status:'PARTIAL',
         eastmoney_hk_documents:[{event_id:'a'.repeat(64)}],
         eastmoney_hk_attempt:{state:'PARTIAL',started_at:'2026-09-29T13:09:00+08:00',finished_at:'2026-09-29T13:10:41+08:00'}},
-      owner_chain:observedNotRunOwnerChain(),
       us_market_attention:{status:'READY',coverage_scope:'FIXED_SCOPE'},research_attention:{status:'READY_WITH_GAPS'},
       read_context:{status:'VERIFIED_WITH_GAPS'},lanes:[],
     } as any);

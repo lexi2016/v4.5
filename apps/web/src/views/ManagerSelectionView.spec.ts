@@ -1,11 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
+// @ts-expect-error The app tsconfig intentionally excludes Node globals; Vitest runs this native read-only test helper in Node.
 import { readFileSync } from "node:fs";
+// @ts-expect-error The app tsconfig intentionally excludes Node globals; Vitest runs this native read-only test helper in Node.
 import { resolve } from "node:path";
 
 import ManagerSelectionView from "./ManagerSelectionView.vue";
-import { ANNOUNCEMENT_PREOPEN_WINDOW } from "../api/managerAnnouncementAnalysis";
 import { validateSelectionProduct } from "../contracts/selection";
 import {
   buildManagerResearchQueue,
@@ -270,8 +271,8 @@ const managerFocusCandidate = managerCandidates.find((item) => item.candidate_id
 const product = {
   schema_version: "v3_5.selection_research_product.v1",
   contract_id: "v3_5.selection_research_product.v1",
-  workflow_name: "V35_SELECTION_RESEARCH_PRODUCT",
-  pass_signal: "V35_SELECTION_RESEARCH_VERTICAL_SLICE_VERIFIED",
+  workflow_name: "V4_SELECTION_RESEARCH_PRODUCT",
+  pass_signal: "V4_SELECTION_RESEARCH_VERTICAL_SLICE_VERIFIED",
   source_date: "20260828",
   target_trade_date: "20260831",
   requested_date: "20260831",
@@ -855,16 +856,8 @@ const managerWorkspaceFor = (targetDate: string) => {
     input_identity: `${targetDate}${"a".repeat(56)}`, stocks: [], lanes: [lane("STAGE"), lane("CATALYST"), lane("CLOSE")],
     themes: [], materials: [], gaps: [],
     summary: { stock_count: 0, relation_count: 0, theme_count: 0, reused_material_count: 0, formal_recommendation_count: 0 },
-    plan_context: {
-      plan_trade_date: targetDate, market_session: targetDate, market_data_verified: true,
-      research_cutoff: `${targetDate.slice(0, 4)}-${targetDate.slice(4, 6)}-${targetDate.slice(6)}T15:30:00+08:00`,
-    },
-    plan_product: { status: "NOT_MATERIALIZED", consumed: false },
-    read_context: {
-      mode: "CURRENT_DYNAMIC_PREVIEW", status: "NOT_MATERIALIZED",
-      contract: "20260923.workspace-history-read.r1", candidate_count_known: false,
-      as_of: `${targetDate.slice(0, 4)}-${targetDate.slice(4, 6)}-${targetDate.slice(6)}T15:30:00+08:00`,
-    },
+    plan_context: { plan_trade_date: targetDate, market_session: targetDate, market_data_verified: true, research_cutoff: targetDate },
+    plan_product: { status: "NOT_MATERIALIZED" },
     market_screen: {
       schema_version: "v4.manager_research.rebound_v3_screen.v1", rule_version: "TEST_REBOUND_V3",
       target_trade_date: targetDate, verified_session: targetDate, status: "READY_WITH_GAPS",
@@ -880,9 +873,9 @@ const managerWorkspaceFor = (targetDate: string) => {
 
 const stubFetch = (selectionPayload: unknown, preselectionPayload: unknown = preselection) => {
   const fetchMock = vi.fn(async (url: string) => {
-    if (url.includes("/api/v3/preselection-pools")) return response(preselectionPayload);
-    if (url.includes("/api/v3/manager/stage-selection")) return response(managerStageSelection);
-    if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionPayload));
+    if (url.includes("/api/v4/preselection-pools")) return response(preselectionPayload);
+    if (url.includes("/api/v4/manager/stage-selection")) return response(managerStageSelection);
+    if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionPayload));
     if (url.includes("/api/v4/manager/research/workspace")) {
       const targetDate = new URL(url, "http://test").searchParams.get("date") || "20260831";
       return response(managerWorkspaceFor(targetDate));
@@ -1252,9 +1245,9 @@ describe("ManagerSelectionView", () => {
       if (url === "/api/v1/runs/date-list") {
         return response({ ok: true, default_date: "20260831", dates: ["20260831"], stage_dates: [], future_target_dates: [] });
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/manager/stage-selection")) return response(managerStageSelection);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/manager/stage-selection")) return response(managerStageSelection);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -1264,7 +1257,7 @@ describe("ManagerSelectionView", () => {
     expect(await screen.findByText("124 条 research ledger（研究账本）")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/runs/date-list", expect.objectContaining({ cache: "no-store" }));
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/research/selection?target_trade_date=20260831",
+      "/api/v4/research/selection?target_trade_date=20260831",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(window.location.search).toBe("?date=20260831");
@@ -1298,24 +1291,24 @@ describe("ManagerSelectionView", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "经理选股工作台" })).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/research/selection?target_trade_date=20260831",
+      "/api/v4/research/selection?target_trade_date=20260831",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/preselection-pools?date=20260831&limit=200",
+      "/api/v4/preselection-pools?date=20260831&limit=200",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/manager/stage-selection?date=20260831&stage=STAGE_0935_0940&limit=50&market=HK_CONNECT",
+      "/api/v4/manager/stage-selection?date=20260831&stage=STAGE_0935_0940&limit=50&market=HK_CONNECT",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/research/selection/manager-decision?target_trade_date=20260831",
+      "/api/v4/research/selection/manager-decision?target_trade_date=20260831",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledTimes(8);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v4/manager/research/workspace?date=20260831&view=auto",
+      "/api/v4/manager/research/workspace?date=20260831",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v4/manager/research/catalyst-observations"))).toHaveLength(0);
@@ -1324,7 +1317,7 @@ describe("ManagerSelectionView", () => {
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/research/lane?research_date=20260831",
+      "/api/v4/research/lane?research_date=20260831",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
@@ -1348,7 +1341,7 @@ describe("ManagerSelectionView", () => {
     expect(screen.getByText("production_allowed=false")).toBeTruthy();
     expect(screen.getByText("buy_gate_updated=false")).toBeTruthy();
     expect(screen.getByText("orders_sent=false")).toBeTruthy();
-    expect(container.textContent).not.toContain("/api/v3/research/selection\n");
+    expect(container.textContent).not.toContain("/api/v4/research/selection\n");
     expect(fetchMock.mock.calls.flat().join(" ")).not.toMatch(/POST|PUT|PATCH|DELETE|manager-decision\.json/);
   });
 
@@ -1361,9 +1354,9 @@ describe("ManagerSelectionView", () => {
         if (failWorkspace) throw new Error("simulated workspace read failure");
         return response(managerWorkspaceFor(targetDate));
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/manager/stage-selection")) return response(managerStageSelection);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/manager/stage-selection")) return response(managerStageSelection);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -1373,17 +1366,17 @@ describe("ManagerSelectionView", () => {
     await waitFor(() => expect(within(screenPanel).getByText(/测试严格/)).toBeTruthy());
     expect(within(screenPanel).getByText(/测试待核/)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v4/manager/research/workspace?date=20260831&view=auto",
+      "/api/v4/manager/research/workspace?date=20260831",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
 
     failWorkspace = true;
     await fireEvent.change(screen.getByLabelText("计划目标日"), { target: { value: "2026-09-01" } });
-    await waitFor(() => expect(screen.getByText("计划 20260901：网络连接或响应读取失败；可检查连接后重新读取。 未显示旧日或未核验股票。")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/工作台读取失败，旧结果已清除/)).toBeTruthy());
     expect(within(screenPanel).queryByText(/测试严格/)).toBeNull();
     expect(within(screenPanel).queryByText(/测试待核/)).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v4/manager/research/workspace?date=20260901&view=auto",
+      "/api/v4/manager/research/workspace?date=20260901",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v4/manager/research/catalyst-observations"))).toHaveLength(0);
@@ -2557,8 +2550,8 @@ describe("ManagerSelectionView", () => {
   it("keeps the trusted selection ledger when the D-1 HTTP request fails", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return { ok: false, status: 503, json: async () => ({}) };
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/preselection-pools")) return { ok: false, status: 503, json: async () => ({}) };
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     }));
 
@@ -2578,10 +2571,10 @@ describe("ManagerSelectionView", () => {
   it("keeps the trusted selection ledger when the D-1 JSON response is invalid", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) {
+      if (url.includes("/api/v4/preselection-pools")) {
         return { ok: true, status: 200, json: async () => { throw new Error("invalid D-1 JSON"); } };
       }
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     }));
 
@@ -2596,7 +2589,7 @@ describe("ManagerSelectionView", () => {
   it("shows the trusted selection ledger while the D-1 response is still pending", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const delayedPreselection = deferred<ReturnType<typeof response>>();
-    vi.stubGlobal("fetch", vi.fn((url: string) => url.includes("/api/v3/preselection-pools")
+    vi.stubGlobal("fetch", vi.fn((url: string) => url.includes("/api/v4/preselection-pools")
       ? delayedPreselection.promise
       : Promise.resolve(response(product))));
 
@@ -2660,7 +2653,7 @@ describe("ManagerSelectionView", () => {
     const newSelection = selectionForDate(newDate);
     const newPreselection = taggedPreselection(newDate, "NEW");
     vi.stubGlobal("fetch", vi.fn((url: string) => {
-      if (!url.includes("/api/v3/preselection-pools")) {
+      if (!url.includes("/api/v4/preselection-pools")) {
         return Promise.resolve(url.includes(newDate) ? response(newSelection) : response(product));
       }
       return url.includes(newDate) ? Promise.resolve(response(newPreselection)) : oldPreselection.promise;
@@ -2703,7 +2696,7 @@ describe("ManagerSelectionView", () => {
     vi.stubGlobal("crypto", { subtle: { digest } });
     const nextPreselection = preselectionForDate("20260901");
     vi.stubGlobal("fetch", vi.fn((url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) {
+      if (url.includes("/api/v4/preselection-pools")) {
         return Promise.resolve(response(url.includes("20260901") ? nextPreselection : preselection));
       }
       return url.includes("20260831") ? firstFetch.promise : secondFetch.promise;
@@ -2771,9 +2764,9 @@ describe("ManagerSelectionView", () => {
   it("renders the exact-stage HK-only candidate panel without using the A-share lane", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/manager/stage-selection")) return response(managerStageSelection);
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(managerStageSelection);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -2782,15 +2775,15 @@ describe("ManagerSelectionView", () => {
 
     const panel = await screen.findByRole("region", { name: "今日港股通阶段候选" });
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/manager/stage-selection?date=20260831&stage=STAGE_0935_0940&limit=50&market=HK_CONNECT",
+      "/api/v4/manager/stage-selection?date=20260831&stage=STAGE_0935_0940&limit=50&market=HK_CONNECT",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
-    await within(panel).findByText("当前显示 8 条");
+    await within(panel).findByText("8 条");
     expect(within(panel).getByRole("heading", { name: "港股通股票 · 阶段与尾盘观察" })).toBeTruthy();
     expect(within(panel).getByText("09:40补充确认 / 非09:35替代")).toBeTruthy();
     expect(within(panel).getByText(/09:40 controlled recovery.*natural=false.*formal=false.*NO_BUY/)).toBeTruthy();
     expect(within(panel).getByText("stage=STAGE_0935_0940", { exact: true })).toBeTruthy();
-    expect(within(panel).getByText("当前显示 8 条")).toBeTruthy();
+    expect(within(panel).getByText("8 条")).toBeTruthy();
     for (const name of ["云知声", "壁仞科技", "融创中国", "建滔积层板", "东岳集团", "MINIMAX-W", "建滔集团", "智谱"]) {
       expect(within(panel).getByText(name)).toBeTruthy();
     }
@@ -2816,10 +2809,10 @@ describe("ManagerSelectionView", () => {
     const targetDate = "20260908";
     const selection = missingProduct("CANNOT_CONFIRM", "SELECTION_ARTIFACT_UNAVAILABLE_OR_INVALID", targetDate);
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(pendingManagerStageFor(targetDate));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(pendingManagerStageFor(targetDate));
       if (url.includes("/api/v4/manager/research")) return response(managerResearchPayloadFor(targetDate));
-      if (url.includes("/api/v3/research/selection/manager-decision")) {
+      if (url.includes("/api/v4/research/selection/manager-decision")) {
         return response(managerDecisionNotMaterializedResponse(targetDate));
       }
       return response(selection);
@@ -2834,7 +2827,7 @@ describe("ManagerSelectionView", () => {
     expect(within(researchSummary).getAllByText("研究执行或读取失败").length).toBeGreaterThan(0);
     const stagePanel = await screen.findByRole("region", { name: "今日港股通阶段候选" });
     expect(within(stagePanel).getByText(/09:40 阶段槽尚未到时/)).toBeTruthy();
-    expect(within(stagePanel).getByText(/数量未知（CANNOT_CONFIRM）/)).toBeTruthy();
+    expect(within(stagePanel).getByText("09:40 前待生成（数量未知）")).toBeTruthy();
     expect(stagePanel.querySelector(".manager-stage-grid")).toBeNull();
   });
 
@@ -2857,10 +2850,10 @@ describe("ManagerSelectionView", () => {
     ]);
     const selection = selectionForDate(targetDate);
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
       if (url.includes("/api/v4/manager/research")) return response(research);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
       return response(selection);
     }));
 
@@ -3015,9 +3008,9 @@ describe("ManagerSelectionView", () => {
     };
     const selection = selectionForDate(targetDate);
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
       if (url.includes("/api/v4/manager/research")) return response(research);
       return response(selection);
     });
@@ -3109,9 +3102,9 @@ describe("ManagerSelectionView", () => {
     ]);
     const selection = selectionForDate(targetDate);
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
       if (url.includes("/api/v4/manager/research")) return response(research);
       return response(selection);
     });
@@ -3160,9 +3153,9 @@ describe("ManagerSelectionView", () => {
     }]);
     const selection = selectionForDate(targetDate);
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
       if (url.includes("/api/v4/manager/research")) return response(research);
       return response(selection);
     });
@@ -3233,9 +3226,9 @@ describe("ManagerSelectionView", () => {
     }]);
     const selection = selectionForDate(targetDate);
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
       if (url.includes("/api/v4/manager/research")) return response(research);
       return response(selection);
     });
@@ -3264,9 +3257,9 @@ describe("ManagerSelectionView", () => {
     const missing = managerResearchNullProductFor(targetDate);
     const ensured = managerResearchPayloadFor(targetDate);
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
-      if (url.includes("/api/v3/research/selection/manager-decision")) {
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/research/selection/manager-decision")) {
         return response(managerDecisionResponseFor(selection));
       }
       if (url.includes("/api/v4/manager/research/ensure")) return response(ensured);
@@ -3345,9 +3338,9 @@ describe("ManagerSelectionView", () => {
     const selection = selectionForDate(targetDate);
     let jobPolls = 0;
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
       if (url.includes("/api/v4/manager/research/events")) return response(queued);
       if (url.includes("/api/v4/manager/research/jobs/mr-events-fixture")) {
         jobPolls += 1;
@@ -3403,9 +3396,9 @@ describe("ManagerSelectionView", () => {
     };
     const selection = selectionForDate(targetDate);
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
       if (url.includes("/api/v4/manager/research/events")) return response(failedRefresh);
       if (url.includes("/api/v4/manager/research")) return response(baseline);
       return response(selection);
@@ -3436,10 +3429,10 @@ describe("ManagerSelectionView", () => {
     const stage = managerPriorityStageFor(targetDate, stageRows);
     const selection = selectionForDate(targetDate);
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
       if (url.includes("/api/v4/manager/research")) return response(managerResearchNullProductFor(targetDate));
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
       return response(selection);
     }));
 
@@ -3482,10 +3475,10 @@ describe("ManagerSelectionView", () => {
     expect(validateManagerStageSelection(stage, targetDate)).toBeNull();
     const selection = selectionForDate(targetDate);
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(targetDate));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stage);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(targetDate));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stage);
       if (url.includes("/api/v4/manager/research")) return response(managerResearchPayloadFor(targetDate));
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selection));
       return response(selection);
     }));
 
@@ -3514,10 +3507,10 @@ describe("ManagerSelectionView", () => {
     };
     const fetchMock = vi.fn(async (url: string) => {
       const date = url.match(/(?:date|target_trade_date|research_date)=(\d{8})/)?.[1] || firstDate;
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(date));
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stageByDate[date]);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(date));
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stageByDate[date]);
       if (url.includes("/api/v4/manager/research")) return response(managerResearchPayloadFor(date));
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionByDate[date]));
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionByDate[date]));
       return response(selectionByDate[date]);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3533,7 +3526,7 @@ describe("ManagerSelectionView", () => {
     expect(screen.queryByText("旧日期阶段行")).toBeNull();
     expect((screen.getByLabelText("目标交易日") as HTMLInputElement).value).toBe("2026-09-08");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/manager/stage-selection?date=20260908&stage=STAGE_0935_0940&limit=50&market=HK_CONNECT",
+      "/api/v4/manager/stage-selection?date=20260908&stage=STAGE_0935_0940&limit=50&market=HK_CONNECT",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
   });
@@ -3592,7 +3585,7 @@ describe("ManagerSelectionView", () => {
       orders_sent: false,
     };
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/manager/stage-selection")) return response(stageFixture);
+      if (url.includes("/api/v4/manager/stage-selection")) return response(stageFixture);
       if (url.includes("/api/v4/manager/research?date=20260904")) return response(managerResearchPayloadFor("20260904", [{
         code: "HK.02718",
         market: "HK_CONNECT",
@@ -3607,9 +3600,9 @@ describe("ManagerSelectionView", () => {
         },
         facts: [{ statement_cn: "官方事实：收入增长", locator: "PDF page 12" }],
       }]));
-      if (url.includes("/api/v3/research/lane?research_date=20260904")) return response(researchLane);
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate("20260904"));
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionForDate("20260904")));
+      if (url.includes("/api/v4/research/lane?research_date=20260904")) return response(researchLane);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate("20260904"));
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionForDate("20260904")));
       return response(selectionForDate("20260904"));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3638,25 +3631,25 @@ describe("ManagerSelectionView", () => {
     expect(article.querySelector('.manager-stage-contribution__background a')?.getAttribute("href"))
       .toBe("https://example.com/hkex/02718.pdf");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/research/lane?research_date=20260904",
+      "/api/v4/research/lane?research_date=20260904",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v4/manager/research?date=20260904",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
-    expect(fetchMock.mock.calls.some(([url]) => url === "/api/v3/research/lane")).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => url === "/api/v4/research/lane")).toBe(false);
   });
 
   it("keeps the stage card visible when the exact research lane request fails", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260904");
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/manager/stage-selection")) {
+      if (url.includes("/api/v4/manager/stage-selection")) {
         return response({ ...managerStageSelection, trade_date: "20260904" });
       }
-      if (url.includes("/api/v3/research/lane?research_date=20260904")) throw new Error("lane unavailable");
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate("20260904"));
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionForDate("20260904")));
+      if (url.includes("/api/v4/research/lane?research_date=20260904")) throw new Error("lane unavailable");
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate("20260904"));
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionForDate("20260904")));
       return response(selectionForDate("20260904"));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3688,18 +3681,18 @@ describe("ManagerSelectionView", () => {
       orders_sent: false,
     });
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-      if (url.includes("/api/v3/research/lane?research_date=20260904")) {
+      if (url.includes("/api/v4/research/lane?research_date=20260904")) {
         oldLaneSignal = init?.signal ?? undefined;
         return oldLane.promise;
       }
-      if (url.includes("/api/v3/research/lane?research_date=20260905")) {
+      if (url.includes("/api/v4/research/lane?research_date=20260905")) {
         return Promise.resolve(response(researchLaneFor("20260905")));
       }
-      if (url.includes("/api/v3/manager/stage-selection")) {
+      if (url.includes("/api/v4/manager/stage-selection")) {
         return Promise.resolve(response({ ...managerStageSelection, trade_date: url.includes("20260905") ? "20260905" : "20260904" }));
       }
-      if (url.includes("/api/v3/preselection-pools")) return Promise.resolve(response(preselectionForDate(url.includes("20260905") ? "20260905" : "20260904")));
-      if (url.includes("/api/v3/research/selection/manager-decision")) return Promise.resolve(response(managerDecisionResponseFor(selectionForDate(url.includes("20260905") ? "20260905" : "20260904"))));
+      if (url.includes("/api/v4/preselection-pools")) return Promise.resolve(response(preselectionForDate(url.includes("20260905") ? "20260905" : "20260904")));
+      if (url.includes("/api/v4/research/selection/manager-decision")) return Promise.resolve(response(managerDecisionResponseFor(selectionForDate(url.includes("20260905") ? "20260905" : "20260904"))));
       return Promise.resolve(response(selectionForDate(url.includes("20260905") ? "20260905" : "20260904")));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3723,7 +3716,7 @@ describe("ManagerSelectionView", () => {
     expect((screen.getByLabelText("目标交易日") as HTMLInputElement).value).toBe("2026-09-05");
     expect(panel.querySelectorAll('[data-contribution-status="UPSTREAM_MISSING"]')).toHaveLength(16);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/research/lane?research_date=20260905",
+      "/api/v4/research/lane?research_date=20260905",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
   });
@@ -3732,10 +3725,10 @@ describe("ManagerSelectionView", () => {
     vi.useFakeTimers();
     window.history.replaceState({}, "", "/manager-selection/?date=20260904");
     const fetchMock = vi.fn((url: string) => {
-      if (url.includes("/api/v3/research/lane?research_date=20260904")) return new Promise(() => undefined);
-      if (url.includes("/api/v3/manager/stage-selection")) return Promise.resolve(response({ ...managerStageSelection, trade_date: "20260904" }));
-      if (url.includes("/api/v3/preselection-pools")) return Promise.resolve(response(preselectionForDate("20260904")));
-      if (url.includes("/api/v3/research/selection/manager-decision")) return Promise.resolve(response(managerDecisionResponseFor(selectionForDate("20260904"))));
+      if (url.includes("/api/v4/research/lane?research_date=20260904")) return new Promise(() => undefined);
+      if (url.includes("/api/v4/manager/stage-selection")) return Promise.resolve(response({ ...managerStageSelection, trade_date: "20260904" }));
+      if (url.includes("/api/v4/preselection-pools")) return Promise.resolve(response(preselectionForDate("20260904")));
+      if (url.includes("/api/v4/research/selection/manager-decision")) return Promise.resolve(response(managerDecisionResponseFor(selectionForDate("20260904"))));
       return Promise.resolve(response(selectionForDate("20260904")));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3753,10 +3746,10 @@ describe("ManagerSelectionView", () => {
   it("keeps the HK stage count unknown when the stage date does not match", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/manager/stage-selection")) {
+      if (url.includes("/api/v4/manager/stage-selection")) {
         return response({ ...managerStageSelection, trade_date: "20260830" });
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3774,10 +3767,10 @@ describe("ManagerSelectionView", () => {
   it("keeps the HK stage count unknown when markets.HK is missing", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/manager/stage-selection")) {
+      if (url.includes("/api/v4/manager/stage-selection")) {
         return response({ ...managerStageSelection, markets: { A: managerStageSelection.markets.A } });
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3795,10 +3788,10 @@ describe("ManagerSelectionView", () => {
   it("keeps the HK stage count unknown when the research-only safety flag is invalid", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/manager/stage-selection")) {
+      if (url.includes("/api/v4/manager/stage-selection")) {
         return response({ ...managerStageSelection, RESEARCH_ONLY: false });
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3816,10 +3809,10 @@ describe("ManagerSelectionView", () => {
   it("keeps the HK stage count unknown for an unrecognized top-level stage status", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/manager/stage-selection")) {
+      if (url.includes("/api/v4/manager/stage-selection")) {
         return response({ ...managerStageSelection, status: "BOGUS" });
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3838,7 +3831,7 @@ describe("ManagerSelectionView", () => {
   it("does not render HK rows when the HK lane is CANNOT_CONFIRM", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/manager/stage-selection")) {
+      if (url.includes("/api/v4/manager/stage-selection")) {
         return response({
           ...managerStageSelection,
           markets: {
@@ -3852,7 +3845,7 @@ describe("ManagerSelectionView", () => {
           },
         });
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3969,11 +3962,11 @@ describe("ManagerSelectionView", () => {
   it("renders the real backend NOT_MATERIALIZED manager response as a typed empty state", async () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/api/v3/research/selection/manager-decision")) {
+      if (url.includes("/api/v4/research/selection/manager-decision")) {
         return response(managerDecisionNotMaterializedResponse());
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/manager/stage-selection")) return response(managerStageSelection);
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/manager/stage-selection")) return response(managerStageSelection);
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -3987,7 +3980,7 @@ describe("ManagerSelectionView", () => {
     expect(document.body.textContent).not.toContain("/research/20260828/2200_initial_supply_freeze.json");
     expect(document.body.textContent).not.toContain("/research/formal/");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v3/research/selection/manager-decision?target_trade_date=20260831",
+      "/api/v4/research/selection/manager-decision?target_trade_date=20260831",
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
   });
@@ -3996,9 +3989,9 @@ describe("ManagerSelectionView", () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes("/api/v4/manager/workbench-research")) return response(workbenchSimulatedFor("20260831"));
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/manager/stage-selection")) return response(managerStageSelection);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/manager/stage-selection")) return response(managerStageSelection);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -4036,9 +4029,9 @@ describe("ManagerSelectionView", () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes("/api/v4/manager/workbench-research")) return response(workbenchSimulatedFor("20260831"));
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/manager/stage-selection")) return response({ status: "SIMULATED_INVALID_STAGE" });
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/manager/stage-selection")) return response({ status: "SIMULATED_INVALID_STAGE" });
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -4057,9 +4050,9 @@ describe("ManagerSelectionView", () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string, _options?: RequestInit) => {
       if (url.includes("/api/v4/manager/workbench-research")) return response(workbenchSimulatedFor("20260831"));
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/manager/stage-selection")) return response(managerStageSelection);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/manager/stage-selection")) return response(managerStageSelection);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -4083,9 +4076,9 @@ describe("ManagerSelectionView", () => {
         if (refreshPending) return refreshPending.promise;
         return response(workbenchSimulatedFor("20260831"));
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/manager/stage-selection")) return response(managerStageSelection);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/manager/stage-selection")) return response(managerStageSelection);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -4111,9 +4104,9 @@ describe("ManagerSelectionView", () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes("/api/v4/manager/workbench-research")) throw new Error("simulated network outage");
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/manager/stage-selection")) return response(managerStageSelection);
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/manager/stage-selection")) return response(managerStageSelection);
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -4129,9 +4122,9 @@ describe("ManagerSelectionView", () => {
     window.history.replaceState({}, "", "/manager-selection/?date=20260831");
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes("/api/v4/manager/workbench-research")) throw new Error("simulated network outage");
-      if (url.includes("/api/v3/preselection-pools")) return response(preselection);
-      if (url.includes("/api/v3/manager/stage-selection")) return response({ status: "SIMULATED_INVALID_STAGE" });
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselection);
+      if (url.includes("/api/v4/manager/stage-selection")) return response({ status: "SIMULATED_INVALID_STAGE" });
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(product));
       return response(product);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -4155,9 +4148,9 @@ describe("ManagerSelectionView", () => {
         if (date === "20260917") return oldWorkbench.promise;
         return response(workbenchSimulatedFor(date));
       }
-      if (url.includes("/api/v3/preselection-pools")) return response(preselectionForDate(date));
-      if (url.includes("/api/v3/manager/stage-selection")) return response({ ...managerStageSelection, trade_date: date });
-      if (url.includes("/api/v3/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionForDate(date)));
+      if (url.includes("/api/v4/preselection-pools")) return response(preselectionForDate(date));
+      if (url.includes("/api/v4/manager/stage-selection")) return response({ ...managerStageSelection, trade_date: date });
+      if (url.includes("/api/v4/research/selection/manager-decision")) return response(managerDecisionResponseFor(selectionForDate(date)));
       return response(selectionForDate(date));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -4172,45 +4165,6 @@ describe("ManagerSelectionView", () => {
     await Promise.resolve();
     expect(summary.textContent).toContain("数据截至 2026-09-18T15:30:00+08:00");
     expect(summary.textContent).not.toContain("数据截至 2026-09-17T15:30:00+08:00");
-  });
-
-  it("defaults the 20261012 announcement panel to the exact 09:20 window and keeps the full-day view separate", async () => {
-    window.history.replaceState({}, "", "/manager-selection/?date=20261012");
-    const unavailable = {
-      schema_version: "v4.manager_research.eastmoney_hk_announcement_analysis_read.v1",
-      target_trade_date: "20261012", publication_date: "2026-10-12", date_selection_basis: "EXPLICIT",
-      source_catalog: { status: "NOT_MATERIALIZED" },
-      analysis: { status: "NOT_IMPORTED", summary: null, records: [], gaps: ["SIMULATED_NOT_IMPORTED"] },
-      preopen_window_readback: {
-        status: "CANNOT_CONFIRM", window_start: ANNOUNCEMENT_PREOPEN_WINDOW.windowStart,
-        as_of: ANNOUNCEMENT_PREOPEN_WINDOW.asOf, reason: "REGISTERED_WINDOW_NOT_VERIFIED",
-      },
-    };
-    const base = stubFetch(selectionForDate("20261012"));
-    const fetchMock = vi.fn(async (url: string) => url.includes("/api/v4/manager/research/announcements/analysis?")
-      ? response(unavailable) : base(url));
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(ManagerSelectionView);
-    const panel = await screen.findByRole("region", { name: "港股公告盘前窗口与当日目录研究" });
-    await waitFor(() => expect(panel.textContent).toContain("窗口回读不可确认"));
-    expect(within(panel).getByRole("button", { name: "09:20 前窗口回看" }).getAttribute("aria-pressed")).toBe("true");
-    expect(panel.textContent).toContain("实际盘前资格 CANNOT_CONFIRM");
-    const windowRequest = fetchMock.mock.calls.map(([url]) => new URL(url, "http://test"))
-      .find(url => url.pathname.endsWith("/announcements/analysis") && url.searchParams.has("window_start"));
-    expect(windowRequest?.searchParams.get("date")).toBe("20261012");
-    expect(windowRequest?.searchParams.get("publication_date")).toBe("20261012");
-    expect(windowRequest?.searchParams.get("window_start")).toBe(ANNOUNCEMENT_PREOPEN_WINDOW.windowStart);
-    expect(windowRequest?.searchParams.get("as_of")).toBe(ANNOUNCEMENT_PREOPEN_WINDOW.asOf);
-
-    await fireEvent.click(within(panel).getByRole("button", { name: "12 日全日目录" }));
-    await waitFor(() => expect(panel.textContent).toContain("全日目录视图"));
-    expect(within(panel).getByRole("button", { name: "12 日全日目录" }).getAttribute("aria-pressed")).toBe("true");
-    const dailyRequest = fetchMock.mock.calls.map(([url]) => new URL(url, "http://test"))
-      .filter(url => url.pathname.endsWith("/announcements/analysis")).at(-1);
-    expect(dailyRequest?.searchParams.get("publication_date")).toBe("20261012");
-    expect(dailyRequest?.searchParams.has("window_start")).toBe(false);
-    expect(dailyRequest?.searchParams.has("as_of")).toBe(false);
   });
 
 });
@@ -4228,45 +4182,24 @@ describe('R2 readable existing workbench',()=>{
     window.history.replaceState({},'', '/manager-selection/?date=20260831');
     vi.stubGlobal('fetch',vi.fn(async (url:string)=>{
       if(url.includes('/api/v4/manager/workbench-research')) { if(fail)throw new Error('SIMULATED outage');return response(research); }
-      if(url.includes('/api/v3/preselection-pools'))return response(preselection);
-      if(url.includes('/api/v3/manager/stage-selection'))return response(stagePresent?managerStageSelection:{status:'SIMULATED_INVALID_STAGE'});
-      if(url.includes('/api/v3/research/selection/manager-decision'))return response(managerDecisionResponseFor(product));
+      if(url.includes('/api/v4/preselection-pools'))return response(preselection);
+      if(url.includes('/api/v4/manager/stage-selection'))return response(stagePresent?managerStageSelection:{status:'SIMULATED_INVALID_STAGE'});
+      if(url.includes('/api/v4/research/selection/manager-decision'))return response(managerDecisionResponseFor(product));
       return response(product);
     }));
     render(ManagerSelectionView);
   }
-  it('shows four indicators after opening original sources while card audit stays collapsed',async()=>{
+  it('shows four Chinese indicators before collapsed audit when Stage is missing',async()=>{
     mockPage(false,workbenchSimulatedFor('20260831'));
-    // Frozen UI contract: the original-source section is collapsed by default.
-    // Open it by the user's summary click, not by assigning the DOM open flag.
-    const sources = await waitFor(() => {
-      const element = document.querySelector<HTMLDetailsElement>('details.manager-original-sources');
-      expect(element).not.toBeNull();
-      return element!;
-    });
-    expect(sources.open).toBe(false);
-    const summary = sources.querySelector(':scope > summary');
-    expect(summary).not.toBeNull();
-    await fireEvent.click(summary!);
-    await waitFor(() => expect(sources.open).toBe(true));
-
     const panel=await screen.findByRole('region',{name:'今日港股通阶段候选'});
     await waitFor(()=>expect(panel.querySelectorAll('.manager-discovery-card')).toHaveLength(2));
     expect(within(panel).getByText('阶段候选暂不可用：缺少当日阶段结果。尾盘观察单独展示。')).toBeTruthy();
     const card=panel.querySelector('.manager-discovery-card')!;
     const grid=card.querySelector('.manager-condition-grid')!;
-    // Indicators are outside the card's own audit details, but inside the
-    // intentionally collapsible original-source section.
-    expect(grid.closest('details')).toBe(sources);
+    expect(grid.closest('details')).toBeNull();
     for(const label of ['成交额','放量依据','超跌或突破','新催化'])expect(grid.textContent).toContain(label);
-    const audit=card.querySelector<HTMLDetailsElement>('details')!;
-    expect(audit).not.toBe(sources);
-    expect(audit.open).toBe(false);
+    const audit=card.querySelector('details')!;expect(audit.hasAttribute('open')).toBe(false);
     expect(audit.textContent).toContain('SIM-CLOSE');
-
-    await fireEvent.click(summary!);
-    await waitFor(() => expect(sources.open).toBe(false));
-    expect(audit.open).toBe(false);
   });
   it('does not hide tail-session input gaps when Stage already has stocks',async()=>{
     mockPage(true,workbenchMissingFor('20260831'));

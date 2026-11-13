@@ -226,7 +226,7 @@ describe("AshareReviewPanel rich V3 product contract", () => {
         { layer: "selector", owner: "PANEL", status: "FAILED/CONTRACT", expected_date: "20260824", observed_date: "20260821", failure_class: "SELECTOR_NOT_READY", receipt_path: "data_layer/data_layer_interface_current/CURRENT_SELECTOR_READY_PANEL.txt", receipt_sha256: "", next_due: "16:05" },
         { layer: "16:05", owner: "A_SHARE_REVIEW", status: "BLOCKED/CONTRACT", expected_date: "20260824", observed_date: "20260821", failure_class: "SELECTOR_NOT_READY", receipt_path: "", receipt_sha256: "", next_due: "ReviewBundle" },
         { layer: "ReviewBundle", owner: "REVIEW_CORE", status: "NOT_MATERIALIZED", expected_date: "20260824", observed_date: "", failure_class: "UPSTREAM_SELECTOR_BLOCKED", receipt_path: "review_bundle/20260824/receipt.json", receipt_sha256: "", path: "review_bundle/20260824/current.json", next_due: "API/UI" },
-        { layer: "API/UI", owner: "V3.5_REVIEW", status: "EVIDENCE_GAP", expected_date: "20260824", observed_date: "", failure_class: "REVIEW_BUNDLE_NOT_MATERIALIZED", receipt_path: "review_bundle/20260824/receipt.json", receipt_sha256: "", path: "/api/v3/review?date=20260824", next_due: "NATURAL_SLOT" },
+        { layer: "API/UI", owner: "V4_REVIEW", status: "EVIDENCE_GAP", expected_date: "20260824", observed_date: "", failure_class: "REVIEW_BUNDLE_NOT_MATERIALIZED", receipt_path: "review_bundle/20260824/receipt.json", receipt_sha256: "", path: "/api/v4/review?date=20260824", next_due: "NATURAL_SLOT" },
       ],
     } as any;
 

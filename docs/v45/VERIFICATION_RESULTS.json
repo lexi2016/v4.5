@@ -1,0 +1,152 @@
+{
+  "schema": "v45.verification.v1",
+  "verified_at_utc": "2026-11-13T00:57:25.426223+00:00",
+  "baseline_commit": "530beea8f3c3edd082d777cbe316b4b0322080ee",
+  "inherited_head": "9f813e8e6a60e20c38d0594d5fd92aa7ac49261c",
+  "environment": {
+    "node": "24.22.1",
+    "npm": "11.9.0",
+    "vite": "7.3.6",
+    "vitest": "4.1.10",
+    "vue": "3.5.40",
+    "vue_tsc": "3.3.8",
+    "typescript": "5.9.3",
+    "jsdom": "28.1.0"
+  },
+  "targeted_contracts": {
+    "tests": 33,
+    "passed": 33,
+    "failed": 0,
+    "skipped": 0,
+    "real_sample_tests": 2,
+    "status": "PASS"
+  },
+  "vite_build": {
+    "status": "PASS",
+    "modules": 125,
+    "html_entries": 6
+  },
+  "frozen_replay_http": {
+    "status": "PASS",
+    "html_entries": 6,
+    "assets": 13,
+    "pool_dates": [
+      "20261112",
+      "20261113"
+    ],
+    "is_production": false
+  },
+  "frozen_sources": {
+    "status": "PASS",
+    "roles": 6,
+    "references": 3053,
+    "unique_repository_paths": 1746,
+    "exact_api_web_files": 136,
+    "explicit_additive_integration": [
+      "apps/web/index.html",
+      "apps/web/vite.config.ts"
+    ]
+  },
+  "full_suite": {
+    "status": "FAIL",
+    "tests": 691,
+    "passed": 615,
+    "failed": 74,
+    "skipped": 2,
+    "files": 50,
+    "report_sha256": "ad29e361d0fbb1dff1e5ff3cf3435a83187eebcc44306f9c8dc816c18a8289a4"
+  },
+  "api_baseline_comparison": {
+    "files": 35,
+    "tests": 538,
+    "counts": {
+      "passed": 477,
+      "failed": 59,
+      "skipped": 2
+    },
+    "status_differences": [],
+    "failed_cases_by_file": {
+      "src/App.spec.ts": 12,
+      "src/app_shell/timeline.remediation.spec.ts": 1,
+      "src/components/research/AShareTop200Panel.spec.ts": 9,
+      "src/components/research/GlobalIndustryMap.spec.ts": 3,
+      "src/components/review/HkCloseReviewPanel.spec.ts": 3,
+      "src/manager-selection/__tests__/businessChainR2.spec.ts": 10,
+      "src/manager-selection/__tests__/businessCompletionR3.spec.ts": 5,
+      "src/manager-selection/__tests__/workspaceAfterReadback.spec.ts": 1,
+      "src/manager-selection/adapters/priority.spec.ts": 1,
+      "src/manager-selection/catalystObservationPanel.runtime.spec.ts": 1,
+      "src/manager-workbench/__tests__/display_reason.spec.ts": 1,
+      "src/manager-workbench/__tests__/us_factor.spec.ts": 4,
+      "src/views/ManagerSelectionView.spec.ts": 6,
+      "src/views/ResearchView.spec.ts": 1,
+      "src/views/ReviewView.spec.ts": 1
+    },
+    "note": "Fixed API role reconstructed and SHA checked; four fixture-dependent suites use two original fixed-tree fixtures excluded from role manifest. No fabricated private files."
+  },
+  "non_api_retained_tests": {
+    "files": 15,
+    "counts": {
+      "failed": 15,
+      "passed": 138
+    },
+    "failed_cases": {
+      "src/api/managerWorkspace.announcementReview.spec.ts": [
+        "exact-publication-day announcement review time contract accepts the full saved 20261002 payload when retrieval follows the query coverage cutoff",
+        "exact-publication-day announcement review time contract accepts the full saved 20261001 payload when retrieval follows the query coverage cutoff",
+        "exact-publication-day announcement review time contract still rejects an announcement published after the source coverage cutoff",
+        "exact-publication-day announcement review time contract retains explicit timezone and publication-before-acquisition checks"
+      ],
+      "src/api/manualCollection.spec.ts": [
+        "posts only the selected fixed identity"
+      ],
+      "src/api/research_lane.spec.ts": [
+        "research lane JSON transport shares the strict no-store request policy across lane and day products",
+        "research lane JSON transport keeps legacy exact/latest calls unbound to the strict validator and request options"
+      ],
+      "src/components/review/VideoReviewPanel.spec.ts": [
+        "visible video review evidence is visible outside the rich surface and replaces only the old video appendix table"
+      ],
+      "src/composables/useResearchLane.spec.ts": [
+        "research status presentation preserves the existing explicit ZSXQ alias and OCR status labels"
+      ],
+      "src/hkStageDisplay.spec.ts": [
+        "ordinary HK stage display evidence shows missing formal output as unknown instead of zero",
+        "ordinary HK stage display evidence labels unsafe or unbound HK rows as observations",
+        "ordinary HK stage display evidence keeps a verified READY_EMPTY result as zero"
+      ],
+      "src/manager-selection/dailyChannels.liveRepair.spec.ts": [
+        "manager live repair daily-channel contract keeps presentation fallbacks separate from explicit request bindings",
+        "manager live repair daily-channel contract binds all three channels to the requested plan, selection, and announcement dates",
+        "manager live repair daily-channel contract renders same-day rows, reasons, and run identities while retaining the complete owner payload"
+      ]
+    },
+    "classification": "11 canonical/API role expectation conflicts and 4 missing original-machine announcement fixture cases"
+  },
+  "typecheck": {
+    "status": "FAIL",
+    "errors": 36,
+    "api_baseline_errors": 31,
+    "non_api_retained_test_errors": 5,
+    "api_error_line_differences": []
+  },
+  "independent_review": {
+    "initial_verdict": "REQUEST_CHANGES",
+    "critical": 0,
+    "important": 3,
+    "writer_resolution": "All three fixed with reproduced RED-to-GREEN regression tests; 33 final targeted tests pass",
+    "second_review": "NOT_RUN; one independent review per agreed workflow"
+  },
+  "browser_desktop": "NOT_RUN: cloud browser could not reach isolated loopback test server",
+  "browser_638px": "NOT_RUN: no render-engine viewport evidence; responsive CSS is implemented only",
+  "production_api_ui": "NOT_RUN",
+  "natural_execution": "NOT_RUN",
+  "deployment": "NOT_RUN",
+  "merge": "NOT_RUN",
+  "RESEARCH_ONLY": true,
+  "production_allowed": false,
+  "buy_gate_updated": false,
+  "orders_sent": false,
+  "preserved_remote_parent": "5440a4c1eb836e3761fb349dc407768582b97658",
+  "integration": "Unpublished local commit rebased onto non-overlapping remote workflow change; runtime bytes unchanged"
+}

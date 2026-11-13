@@ -1,51 +1,54 @@
-import { loadResearchBundle, normaliseDate } from "../shared/data.js";
-const $=id=>document.getElementById(id);
-const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const dateInput=d=>d.slice(0,4)+"-"+d.slice(4,6)+"-"+d.slice(6,8);
-function card(title,status,lines=[]) { return `<article class="v45-evidence"><h3>${esc(title)}</h3><span class="v45-pill">${esc(status??"CANNOT_CONFIRM")}</span>${lines.map(x=>`<p>${esc(x)}</p>`).join("")}</article>`; }
-function productLines(p) {
- const row=p?.row??{}; const out=[];
- for(const [k,v] of Object.entries(row)) if(v!==null && ["string","number","boolean"].includes(typeof v) && /(symbol|name|status|stage|signal|reason|key|score|date|structure|label|support|risk|summary)/i.test(k)) out.push(k+"："+String(v));
- return out.slice(0,12);
+import {DEFAULT_DATE,loadResearchBundle,normaliseDate,apiSymbol} from '../shared/data.js';
+import {esc,text,dateInput,pill,card,lines,detail,remember,pageLink,updateNav,setStatus,safeAssetUrl,maturityCard} from '../shared/ui.js';
+const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);
+let request=0;
+const gaps=x=>[x?.missing_reason,...(Array.isArray(x?.cannot_confirm)?x.cannot_confirm:[]),...(Array.isArray(x?.availability_gaps)?x.availability_gaps:[])].filter(Boolean);
+function renderA(bundle,ctx){
+  const p=bundle.product,c=bundle.chart,m=bundle.company,row=p.row??{},stats=row.statistics??{},evaluation=row.evaluation??{};
+  const groups=bundle.maturity;
+  $('overview').innerHTML=[['数值日包',p.status],['原图描述',c.status],['公司材料',m.status],['来源日期',bundle.date]].map(([label,value])=>`<div class="v45-stat"><strong>${esc(value??'未知')}</strong><span>${label}</span></div>`).join('');
+  const chartUrl=safeAssetUrl(c.assets?.html?.url),png=safeAssetUrl(c.assets?.png?.url);
+  const assetContent=chartUrl?`<p><a href="${esc(chartUrl)}" target="_blank" rel="noopener noreferrer">打开原图（沿用原日期与 SHA 绑定）</a></p><button id="load-chart" type="button">在本页加载原图</button>`:png?`<img class="v45-chart-image" src="${esc(png)}" alt="原 owner 的个股图形">`:'<p>尚无可读取的图形资产入口。</p>';
+  $('evidence').innerHTML=
+    card('量价结构 · '+text(row.display_name||bundle.symbol),p.status,lines([`来源日 ${bundle.date} · 原组别 ${text(row.groups)} · 最近关键 K ${text(row.latest_new_anchor)}`,`原数值判定 ${text(evaluation.status)} · 风险清除 ${text(row.risk_clear)}`,`原判定说明 ${text(row.reasons)}`,`当前收盘 ${text(stats.price_distribution?.current_close)} · 近250日历史分位 ${text(stats.price_distribution?.near_250?.percentile??stats.price_distribution?.near_250?.current_price_percentile)}`,...gaps(p)])+detail('原组别结构与风险',{groups:evaluation.groups,risk:evaluation.risk,qualification:{reason:row.qualification?.reason,historical_PIT:row.qualification?.historical_PIT},historical_coverage:row.historical_coverage}))+
+    card('原图 / 关键 K',c.status,lines([`图形描述行数 ${text(c.rows)}`,`图形资产：${Object.keys(c.assets??{}).join(' / ')||'未提供'}`,...gaps(c)])+assetContent+'<p class="v45-muted">描述 READY 与图形资产实际加载分开；本页不会重新计算图形。</p>')+
+    card('公司材料 · 基本面、产业与风险',m.status,lines(gaps(m).length?gaps(m):['按原材料的公开/可用时点查看；材料收到与已导入分别记录。'])+(m.materials||m.items||m.summary?detail('原材料与证据',m.materials??m.items??m.summary):'<p>尚无绑定公司材料；不由量价判定补写基本面结论。</p>'))+
+    card('来源与验证边界',p.status,lines([`generation：${text(p.source_generation)}`,`历史 PIT：${text(p.source_identity?.historical_PIT)}`,`历史覆盖：${text(row.historical_coverage?.status)}；已评估 ${text(row.historical_coverage?.evaluated_count)}`,`原最高结论：${text(row.historical_coverage?.maximum_claim)}`])+'<p>当前页面为原结果投影，原判定不等同于新的买入评级。</p>')+
+    groups.map(g=>`<section class="v45-group"><h3>${esc(g.groupId)} · 原事件分母</h3><div class="v45-two">${maturityCard('D+2',g.d2)}${maturityCard('D+5',g.d5)}</div><p><a href="${pageLink('review',{...ctx,group:g.groupId})}">核对此组原事件明细</a></p></section>`).join('');
+  if(!groups.length)$('evidence').innerHTML+=card('D+2 / D+5','CANNOT_CONFIRM','<p>日包没有该股分组统计，不使用历史其他股票或其他日期的收益代填。</p>');
+  $('lineage').innerHTML=lines([`A股 ${bundle.symbol} · 材料来源日 ${bundle.date} · 观察日 ${ctx.observationDate}`,`input SHA ${text(p.source_identity?.input_sha256)}`,`numeric manifest SHA ${text(p.manifest?.sha256)}`,`chart manifest SHA ${text(c.chart_manifest?.sha256)}`])+'<p>材料日期、事实可用时间、历史案例及最新信号分别保留。研究回包已收到不代表公司材料已导入。</p>';
+  if(chartUrl)$('load-chart').onclick=()=>{
+    const host=$('chart-host');host.classList.remove('v45-hidden');
+    host.innerHTML='<h2 class="v45-title">原图资产</h2><p>已请求原 owner 图形。若原资产不可达，下方会显示其错误；不据描述状态宣称图形已验收。</p>';
+    const frame=document.createElement('iframe');frame.className='v45-chart';frame.title='同来源日原图';frame.referrerPolicy='same-origin';frame.src=chartUrl;host.appendChild(frame);
+  };
 }
-function renderA(b) {
- const p=b.product??{}, c=b.chart??{}, m=b.company??{}, d2=b.d2??{}, d5=b.d5??{};
- const companyGaps=Array.isArray(m.availability_gaps)?m.availability_gaps.join("；"):String(m.availability_gaps??"");
- $("overview").innerHTML=`<div class="v45-stat"><strong>${esc(p.status??"UNKNOWN")}</strong><span>数值日包</span></div><div class="v45-stat"><strong>${esc(c.status??"UNKNOWN")}</strong><span>原图描述</span></div><div class="v45-stat"><strong>${esc(m.status??"UNKNOWN")}</strong><span>公司材料</span></div><div class="v45-stat"><strong>${esc(p.source_generation??"未提供")}</strong><span>来源generation</span></div>`;
- $("evidence").innerHTML=[
- card("量价与数值日包",p.status,["材料日期："+(p.data_date??b.date),"来源身份："+(p.source_identity?.status??"未提供"),...productLines(p)]),
- card("原图 / 关键K",c.status,["图表行数："+(c.rows??"未提供"),"图表资产："+(Array.isArray(c.assets)?c.assets.length:"未提供"),"input SHA："+(c.input_sha256??"未提供"),"原图描述READY不代表图片资产已全部读取"]),
- card("公司材料",m.status,["缺失原因："+(m.missing_reason??"无"),"可用性缺口："+(companyGaps||"未提供")]),
- card("D+2 / D+5案例", "按原案例接口返回",["D+2："+(d2.status??"UNKNOWN")+" · 成熟"+(d2.valid??"未知")+" · 未成熟"+(d2.not_matured??"未知")+" · 缺价"+(d2.missing_price??"未知"),"D+5："+(d5.status??"UNKNOWN")+" · 成熟"+(d5.valid??"未知")+" · 未成熟"+(d5.not_matured??"未知")+" · 缺价"+(d5.missing_price??"未知"),"历史案例统计不能替代最新信号的成熟度认证"])
- ].join("");
- $("lineage").innerHTML=`<p>市场：A股 · 证券：<strong>${esc(b.symbol)}</strong> · 来源日：${esc(b.date)}</p><p>数值日包generation：${esc(p.source_generation??"未提供")}</p><p>原图SHA：${esc(c.chart_manifest?.sha256??c.product_manifest?.sha256??"未提供")}</p><p>公司材料状态：${esc(m.status??"CANNOT_CONFIRM")}。研究回包收到不等于材料已导入。</p>`;
+function renderHK(bundle,ctx){
+  const w=bundle.workbench,stock=w.stock,candidate=bundle.candidate,snapshot=w.snapshot;
+  $('overview').innerHTML=[['原工作台',w.status],['0.2池覆盖',candidate?'已覆盖':'未覆盖'],['观察日',bundle.observationDate],['材料来源日',candidate?.sourceDates.join(' / ')||'未知']].map(([k,v])=>`<div class="v45-stat"><strong>${esc(v)}</strong><span>${k}</span></div>`).join('');
+  $('evidence').innerHTML=card('港股通 / 0.2 原候选 · '+text(candidate?.name||stock?.name||bundle.symbol),candidate?candidate.sources[0]?.poolStatus:'CANNOT_CONFIRM',
+    candidate?lines(candidate.sources.map(s=>`${s.poolId} · 来源日 ${text(s.sourceDate)} · 原排名 ${text(s.rank)} · 原分数 ${text(s.score)} · ${text(s.reason)}`))+detail('候选原来源',candidate.sources):lines([bundle.poolError||'当前池未覆盖该股，不解释为淘汰。']))+
+    card('港股原个股研究',w.status,stock?lines([`原判定 ${text(stock.decision)}`,...(stock.reasons??[]),...(stock.conditions??[]).map(x=>'观察条件：'+x),...(stock.invalidation_conditions??[]).map(x=>'失效条件：'+x),...(stock.risks??[]).map(x=>'风险：'+x)])+detail('原分来源证据',w.detail?.data?.lane_details):lines([...gaps(w),...(w.day?.gaps??[]),'本次没有该股可读取的工作台材料，保留候选资料。']))+
+    card('港股独立日历与批次',snapshot?'BOUND':'CANNOT_CONFIRM',lines([`run_id ${text(snapshot?.run_id)}`,`原运行阶段 ${text(snapshot?.context?.phase)}`,`真实截止时点 ${text(snapshot?.context?.cutoff)}`,`原输入 SHA ${text(snapshot?.input_sha256)}`])+'<p>不套用 A 股 v1.9.2 或成熟日历；事后/手动结果依原阶段标记展示。</p>')+
+    card('港股 D+2 / D+5','CANNOT_CONFIRM','<p>尚无已确认的港股证券级成熟度合同；不填零，也不借用 A 股案例。</p>');
+  $('lineage').innerHTML=lines([`港股 ${bundle.symbol} · 观察日 ${bundle.observationDate}`,`现役读取路径：manager-workbench/days → 固定 run_id → stocks`, `材料状态 ${w.status}；候选状态独立保留。`]);
+  if(snapshot?.run_id)ctx.runId=snapshot.run_id;
 }
-function renderHK(b) {
- const w=b.workbench??{}, row=b.row;
- $("overview").innerHTML=`<div class="v45-stat"><strong>${esc(w.status??b.status)}</strong><span>港股工作台状态</span></div><div class="v45-stat"><strong>${esc(w.trade_date??b.date)}</strong><span>交易日期</span></div><div class="v45-stat"><strong>${esc(w.market??"HK_CONNECT")}</strong><span>原市场合同</span></div><div class="v45-stat"><strong>${row?"已覆盖":"未覆盖"}</strong><span>当前证券</span></div>`;
- $("evidence").innerHTML=card("港股通 / 0.2原有工作台",w.status??b.status,["证券："+b.symbol,"slot："+(w.slot??"1530"),row?"找到该证券的原工作台记录。":"当前工作台结果未覆盖该证券；这不等于淘汰。","沿用港股自身交易日历和资格规则，不套用A股v1.9.2比较。",...(w.cannot_confirm??[]).slice(0,4)] )+card("原始证据",w.source_status??"CANNOT_CONFIRM",["generation："+(w.generation??"未提供"),"source SHA："+(w.source_sha256??"未提供"),"回看/补算与自然运行必须分别标识"]);
- $("lineage").innerHTML=`<p>市场：港股通 · 证券：<strong>${esc(b.symbol)}</strong> · 日期：${esc(b.date)}</p><p>来源：${esc(b.source)}。只读读取既有工作台，不触发ensure、retry或其他写操作。</p>`;
+async function load(){
+  const ticket=++request;
+  for(const id of ['overview','evidence','lineage','chart-host'])$(id).innerHTML='';$('chart-host').classList.add('v45-hidden');
+  try{
+    const market=$('market').value,symbol=apiSymbol(market,$('symbol').value),date=normaliseDate($('date').value),observationDate=normaliseDate(params.get('observationDate')||date);
+    const ctx={date,sourceDate:date,observationDate,market,symbol,group:params.get('group'),search:params.get('search'),source:params.get('source'),pageNumber:params.get('page'),runId:params.get('runId')};
+    remember({...ctx,sourceDate:null,pageNumber:null});setStatus('正在读取原研究材料…','RUNNING');
+    const bundle=await loadResearchBundle(ctx);if(ticket!==request)return;
+    if(market==='A')renderA(bundle,ctx);else renderHK(bundle,ctx);
+    updateNav(ctx);$('selection-link').href=pageLink('selection',ctx);$('review-link').href=pageLink('review',ctx);
+    setStatus(`${market} ${symbol} · 来源日 ${date} · 观察日 ${observationDate}。各模块独立显示状态，当前 ${bundle.status}。`,bundle.status);
+  }catch(error){if(ticket!==request)return;setStatus(error.message,'FAILED');$('evidence').innerHTML=card('读取失败 / 待确认','FAILED','<p>请核对市场、证券与来源日。旧材料已撤下。</p>');}
 }
-async function load() {
- const symbol=$("symbol").value.trim().toUpperCase(), market=$("market").value, date=normaliseDate($("date").value);
- $("status").className="v45-status";$("status").textContent="正在读取原研究owner…";
- const observationDate=params.get("observationDate") || date;
- $("review-link").href="/v45/review/?"+new URLSearchParams({date:observationDate,sourceDate:date,market,symbol});
- $("selection-link").href="/v45/selection/?"+new URLSearchParams({date,market});
- try {
-  const b=await loadResearchBundle({market,symbol,date});
-  if(market==="A") renderA(b); else renderHK(b);
-  $("status").className="v45-status "+(/READY/.test(String(b.status))?"good":"warn");
-  $("status").textContent="已读取原API响应。状态仅按各证据合同展示，不将HTTP成功升级为材料完整。";
- } catch(e) {
-  $("status").className="v45-status bad";$("status").textContent=(e instanceof Error?e.message:"研究读取失败")+"。缺件保持未知，未使用本地旧材料覆盖当前结果。";
-  $("overview").innerHTML="";$("evidence").innerHTML='<article class="v45-evidence"><h3>读取失败 / 待确认</h3><p>检查市场、来源日期和原API状态。</p></article>';$("lineage").textContent="当前没有可验证的研究结果。";
- }
-}
-$("research-form").addEventListener("submit",e=>{e.preventDefault();load()});
-const params=new URLSearchParams(location.search);
-if(params.has("symbol"))$("symbol").value=params.get("symbol");
-if(params.has("market") && ["A","HK"].includes(params.get("market")))$("market").value=params.get("market");
-if(params.has("date"))$("date").value=dateInput(normaliseDate(params.get("date")));
-$("review-link").href="/v45/review/?"+new URLSearchParams({date:params.get("observationDate")||normaliseDate($("date").value),sourceDate:normaliseDate($("date").value)});
+$('research-form').onsubmit=e=>{e.preventDefault();load();};
+if(['A','HK'].includes(params.get('market')))$('market').value=params.get('market');
+$('symbol').value=params.get('symbol')||($('market').value==='HK'?'HK.02659':'000159.SZ');
+try{$('date').value=dateInput(params.get('date')||DEFAULT_DATE);}catch{$('date').value='';}
 load();

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { requestManagerWorkspace, validateManagerWorkspace, type JsonObject, type ManagerWorkspace, type ResearchAttentionCard, type UsMappingResearch } from './managerWorkspace';
+import { requestManagerWorkspace, validateManagerWorkspace, type JsonObject, type ManagerWorkspace, type ResearchAttentionCard } from './managerWorkspace';
 import { renderResearchAttention } from '../manager-selection/researchAttention';
 
 const flags = { RESEARCH_ONLY: true, production_allowed: false, buy_gate_updated: false, orders_sent: false };
@@ -232,7 +232,7 @@ describe('Manager workspace evidence-state API contract', () => {
         matches: [], gaps: ['DAILY_MAPPING_NOT_MATERIALIZED'], source_identity: null,
       },
       reviewed_research: null,
-    } as unknown as UsMappingResearch;
+    } as unknown as ManagerWorkspace['us_mapping_research'];
     targetWorkspace.us_mapping_research = mapping;
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => targetWorkspace } as Response)));
 
@@ -245,91 +245,6 @@ describe('Manager workspace evidence-state API contract', () => {
       ...mapping, daily_run: { ...mapping.daily_run, coverage },
     } } as unknown as JsonObject;
     expect(() => validateManagerWorkspace(missingField, targetDate)).toThrow('WORKSPACE_COUNT_INVALID');
-  });
-
-  it('renders persisted daily US mapping fields for the matching target date without borrowing the retrospective seed', () => {
-    const targetDate = '20260925';
-    const targetWorkspace = workspace(attention([]), targetDate, targetDate);
-    targetWorkspace.us_mapping_research = {
-      schema_version: 'v4.manager_research.us_mapping_research.v1', target_trade_date: targetDate,
-      daily_run: {
-        ...flags, schema_version: 'v4.manager_research.us_mapping_daily_run.v1', status: 'COMPLETED',
-        target_trade_date: targetDate, run_id: 'daily-run-1', generated_at: '2026-09-25T01:27:30Z',
-        us_session_date: '20260924', research_cutoff: '2026-09-25T09:27:30+08:00', source_status: 'READY',
-        source_identity: { payload_sha256: 'a'.repeat(64), receipt_sha256: 'b'.repeat(64), manifest_sha256: 'c'.repeat(64) },
-        coverage: { reviewed_us_symbol_count: 4, matched_us_symbol_count: 1, matched_hk_relation_count: 1,
-          configured_us_universe_count: 33, available_us_universe_count: 33, full_market_coverage: false },
-        matches: [{ us_symbol: 'LITE', change_pct: 5.662528, session_date: '20260924', hk_symbol: 'HK.06166', research_priority: 'PRIORITY',
-          hk_name: '剑桥科技（CIG Shanghai）', relationship_type: 'PRODUCT_PEER',
-          reason: '高速数通光收发器产品同业映射。', maturity: '800G模块已大批量出货。',
-          limitations: ['同业映射，不是客户/供应关系'], official_sources: [{ title: '公司中期报告',
-            url: 'https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0903/2026090300698.pdf', published_at: '2026-09-03' }],
-          target_date_eligibility: 'CANNOT_CONFIRM' }],
-        gaps: [],
-      },
-      reviewed_research: null,
-      ...flags,
-    } as unknown as ManagerWorkspace['us_mapping_research'];
-
-    const validated = validateManagerWorkspace(targetWorkspace, targetDate);
-    const host = document.createElement('div');
-    renderResearchAttention(host, validated.research_attention, undefined, undefined, validated.us_mapping_research);
-
-    expect(host.textContent).toContain('LITE +5.662528%');
-    expect(host.textContent).toContain('06166 剑桥科技（CIG Shanghai）');
-    expect((host.querySelector('.us-mapping-table a') as HTMLAnchorElement | null)?.rel).toBe('noopener noreferrer');
-    expect(host.textContent).toContain('PRIORITY · 优先核验');
-    expect(host.querySelector('[data-reviewed-us-mapping]')).toBeNull();
-    expect(host.textContent).not.toContain('20260930 已审阅回顾');
-  });
-
-  it('labels the retrospective target date, US source session, review date, and explicit priority versus watch tiers', () => {
-    const targetDate = '20260930';
-    const five = [
-      ['HK.06166', '06166', '剑桥科技', 'PRIORITY', 'LITE'],
-      ['HK.06088', '06088', '鸿腾精密', 'PRIORITY', 'AVGO'],
-      ['HK.00763', '00763', '中兴通讯', 'PRIORITY', 'CIEN'],
-      ['HK.06869', '06869', '长飞光纤光缆', 'WATCH', '未指定单只美股驱动或涨幅'],
-      ['HK.01729', '01729', '汇聚科技', 'WATCH', '未指定单只美股驱动或涨幅'],
-    ] as const;
-    const mapping = {
-      ...flags, schema_version: 'v4.manager_research.us_mapping_research.v1', target_trade_date: targetDate,
-      daily_run: { ...flags, schema_version: 'v4.manager_research.us_mapping_daily_run.v1', status: 'NOT_RUN',
-        target_trade_date: targetDate, run_id: null, generated_at: null, us_session_date: null, research_cutoff: null,
-        coverage: { reviewed_us_symbol_count: 4, matched_us_symbol_count: null, matched_hk_relation_count: null,
-          configured_us_universe_count: null, available_us_universe_count: null, full_market_coverage: false },
-        matches: [], gaps: ['DAILY_MAPPING_NOT_MATERIALIZED'], source_identity: null },
-      reviewed_research: { ...flags, schema_version: 'v4.manager_research.us_mapping_reviewed.v1',
-        target_trade_date: targetDate, us_session_date: '20260929', status: 'REVIEWED_RETROSPECTIVE_RESEARCH',
-        reviewed_at: '2026-10-05', artifact_sha256: 'd'.repeat(64), report: { sha256: 'e'.repeat(64) },
-        source_scope: { requested_us_symbols: 33, original_workspace_plan_status: 'SOURCE_FAILED',
-          original_us_owner_lineage_status: 'CANNOT_CONFIRM', original_plan_consumed_these_relations: false,
-          target_date_eligibility: 'CANNOT_CONFIRM', pit_status: 'CANNOT_CONFIRM' },
-        cards: five.map(([hk_symbol, hk_code, hk_name, research_priority, symbol]) => ({
-          hk_symbol, hk_code, hk_name, research_priority,
-          us_symbols: symbol.startsWith('未指定') ? [] : [symbol], daily_match_symbols: [],
-          us_moves: symbol.startsWith('未指定') ? [] : [{ symbol, change_pct: 1.25 }],
-          theme_label: symbol.startsWith('未指定') ? symbol : undefined,
-          relationship_type: 'PRODUCT_PEER', reason: '已审阅关系摘要。', maturity: '已披露产品阶段。',
-          limitations: [], published_at: '2026-09-03', target_date_eligibility: 'CANNOT_CONFIRM',
-          official_sources: [{ title: '官方报告', url: 'https://example.com/report', published_at: '2026-09-03' }],
-        })),
-      },
-    } as unknown as UsMappingResearch;
-    const targetAttention=attention([]);
-    targetAttention.target_trade_date=targetDate;
-    targetAttention.research_cutoff='2026-09-30T09:27:30+08:00';
-    const targetWorkspace=workspace(targetAttention,targetDate,targetDate);
-    targetWorkspace.us_mapping_research=mapping;
-    const validated=validateManagerWorkspace(targetWorkspace,targetDate);
-    const host = document.createElement('div');
-    renderResearchAttention(host, validated.research_attention, undefined, undefined, validated.us_mapping_research);
-    expect(host.textContent).toContain('港股目标日 2026-09-30 / 美股来源时段 2026-09-29 / 审阅于 2026-10-05');
-    expect(host.querySelectorAll('.us-mapping-table tbody tr')).toHaveLength(5);
-    expect(host.querySelectorAll('.us-mapping-table tbody tr td:first-child')[0].textContent).toContain('PRIORITY');
-    expect(host.querySelectorAll('.us-mapping-table tbody tr td:first-child')[4].textContent).toContain('WATCH');
-    expect(host.textContent).toContain('事后研究；原盘前计划未消费这些关系');
-    expect(validated.us_mapping_research?.reviewed_research?.us_session_date).toBe('20260929');
   });
 
   it('validates the four US mapping assessment states and nullable count contract',()=>{

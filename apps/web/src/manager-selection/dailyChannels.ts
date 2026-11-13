@@ -62,33 +62,19 @@ export function normalizedWorkspaceDay(raw: unknown): string | null {
 }
 
 /** The legacy date remains a display/source day and publication fallback, never a plan-date override. */
-export function readDailyDateBindings(params: URLSearchParams, initialDate: string): {
-  bindings: WorkspaceDateBindings; explicit: boolean; requested: WorkspaceRequestDateBindings;
-} {
+export function readDailyDateBindings(params: URLSearchParams, initialDate: string): { bindings: WorkspaceDateBindings; explicit: boolean } {
   const initial = normalizedWorkspaceDay(initialDate);
   if (!initial) fail('DATE_BINDING_INVALID');
-  const queryDay = (key: string): string | null => {
-    const raw = params.get(key);
-    if (raw === null || raw === '') return null;
-    const normalized = normalizedWorkspaceDay(raw);
-    return normalized ?? fail('DATE_BINDING_INVALID');
-  };
-  const legacy = queryDay('date');
-  const requestedSelection = queryDay('selection_date');
+  const legacy = normalizedWorkspaceDay(params.get('date'));
+  const selection = normalizedWorkspaceDay(params.get('selection_date'));
   // announcement_date is canonical when both aliases are supplied. The
   // frozen handoff also exposes publication_date for the same calendar day.
-  const requestedAnnouncement = queryDay('announcement_date') ?? queryDay('publication_date');
-  const selection = requestedSelection ?? legacy;
-  const announcement = requestedAnnouncement ?? legacy;
-  const requested: WorkspaceRequestDateBindings = {
-    ...(requestedSelection ? { selection_date: requestedSelection } : {}),
-    ...(requestedAnnouncement ? { announcement_date: requestedAnnouncement } : {}),
-  };
+  const announcement = normalizedWorkspaceDay(params.get('announcement_date')) ?? normalizedWorkspaceDay(params.get('publication_date'));
   return { bindings: {
-    plan_date: queryDay('plan_date') ?? initial,
-    selection_date: selection ?? initial,
-    announcement_date: announcement ?? initial,
-  }, explicit: Object.keys(requested).length > 0, requested };
+    plan_date: normalizedWorkspaceDay(params.get('plan_date')) ?? initial,
+    selection_date: selection ?? legacy ?? initial,
+    announcement_date: announcement ?? legacy ?? initial,
+  }, explicit: selection !== null || announcement !== null };
 }
 
 /** Only explicit source choices go to the API; its original calendar owns defaults. */
@@ -341,29 +327,38 @@ const diagnosticDetails = (value: unknown): HTMLDetailsElement => {
 };
 
 /** First-screen stock/reason/date/run view; strings are always text nodes, including diagnostics. */
-export function renderDailyChannels(host: HTMLElement, raw: DailyChannels | undefined, bindings: WorkspaceDateBindings): void {
+export function renderDailyChannels(host: HTMLElement, raw: DailyChannels | undefined, bindings?: WorkspaceDateBindings): void {
   host.dataset.dailyChannels = 'true'; host.setAttribute('aria-label', '每日三路研究结果');
   const heading = element('h3', '每日三路研究结果');
-  const dates = element('p', `来源/选股日 ${bindings.selection_date} · 公告日 ${bindings.announcement_date} · 计划日 ${bindings.plan_date}`);
+  const dates = element('p', bindings
+    ? `来源/选股日 ${bindings.selection_date} · 公告日 ${bindings.announcement_date} · 计划日 ${bindings.plan_date}`
+    : '三路日期绑定未提供 · CANNOT_CONFIRM');
   dates.dataset.dailyBindings = 'true';
   const grid = element('div', '', 'manager-daily-grid');
-  const style = element('style', '.manager-daily-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.manager-daily-grid>article{margin:0;min-width:0}.manager-daily-grid h4,.manager-daily-grid h5{margin:0 0 8px}.manager-daily-grid p{margin:7px 0}.manager-daily-rows{padding-left:20px;max-height:440px;overflow:auto}.manager-daily-rows li{margin:12px 0;overflow-wrap:anywhere}.manager-daily-meta{font-size:.9em;color:#4c5b68}');
+  const style = element('style', '.manager-daily-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}.manager-daily-grid>article{margin:0;min-width:0}.manager-daily-grid h4,.manager-daily-grid h5{margin:0 0 8px}.manager-daily-grid p{margin:7px 0}.manager-daily-rows{padding-left:20px;max-height:440px;overflow:auto}.manager-daily-rows li{margin:12px 0;overflow-wrap:anywhere}.manager-daily-meta{font-size:.9em;color:#4c5b68}');
   host.replaceChildren(style, heading, dates, element('p', '来源/选股日用于展示；港股通资格仍核对计划日的权威输入。'), grid);
   let value: DailyChannels | undefined; let failure = '尚未提供三路结果合同';
   if (raw !== undefined) {
-    try { value = validateDailyChannels(raw, bindings); }
+    try { if (!bindings) fail('DATE_BINDING_INVALID'); value = validateDailyChannels(raw, bindings); }
     catch (error) { failure = `三路结果合同未通过校验：${error instanceof Error ? error.message : 'WORKSPACE_DAILY_INVALID'}`; }
   }
   for (const id of channelIds) {
     const channel = value?.channels.find(item => item.channel === id);
-    const article = element('article'); article.dataset.dailyChannel = id; article.dataset.dailyStatus = channel?.status ?? 'UNVERIFIED';
-    article.append(element('h4', channelNames[id]), element('strong', channel ? statusNames[channel.status] : '尚未核实'));
+    const article = element('article'); article.dataset.dailyChannel = id; article.dataset.dailyStatus = channel?.status ?? 'CANNOT_CONFIRM';
+    article.append(element('h4', `${id} · ${channelNames[id]}`),
+      element('strong', `${channel?.status ?? 'CANNOT_CONFIRM'} · ${channel ? statusNames[channel.status] : '尚未核实'}`));
     const candidateText = channel?.candidate_count !== null && channel?.candidate_count !== undefined ? `候选 ${channel.candidate_count} 只` : '候选数量未知';
     const pendingText = channel?.pending_count !== null && channel?.pending_count !== undefined ? `待核 ${channel.pending_count}` : '待核数量未知';
     article.append(element('p', `${candidateText}${channel?.watch_count !== undefined ? ` · 观察 ${channel.watch_count}` : ''} · ${pendingText}`));
     article.append(element('p', `数据日 ${channel?.data_date ?? '未核实'}`, 'manager-daily-meta'));
+    article.append(element('p', `原 owner ${channel?.owner ?? 'CANNOT_CONFIRM'}`, 'manager-daily-meta'));
     article.append(element('p', `运行编号 ${channel?.run_id ?? '未提供/待核'} · ${channel ? executionNames[channel.execution_kind] : '生成运行未核实'}`, 'manager-daily-meta'));
+    article.append(element('p', `产物 SHA256 ${channel?.product_sha256 ?? 'CANNOT_CONFIRM'} · 输入身份 ${channel?.input_identity ?? 'CANNOT_CONFIRM'}`, 'manager-daily-meta'));
     if (channel?.generated_at) article.append(element('p', `产物时间 ${channel.generated_at}`, 'manager-daily-meta'));
+    if (channel) {
+      const shownGaps = channel.gaps.slice(0, 3);
+      article.append(element('p', `缺口 ${channel.gaps.length} 项${shownGaps.length ? `：${shownGaps.join('；')}` : '；状态仍按原 owner 结果显示'}${channel.gaps.length > shownGaps.length ? '；其余缺口完整保留在来源详情' : ''}`));
+    }
     if (channel?.rows.length) {
       const list = element('ol', '', 'manager-daily-rows');
       for (const row of channel.rows) {
@@ -371,12 +366,13 @@ export function renderDailyChannels(host: HTMLElement, raw: DailyChannels | unde
         item.append(element('h5', `${row.name} · ${row.symbol}`),
           element('p', row.selection_status === 'SELECTED' ? '研究候选' : row.selection_status === 'NEAR_CONDITION' ? '接近条件观察' : '条件观察'),
           element('p', row.reason ?? '选入理由未提供/待核'),
-          element('p', `数据日 ${row.data_date ?? '未核实'} · 运行编号 ${row.run_id ?? '未提供/待核'}`, 'manager-daily-meta'));
+          element('p', `数据日 ${row.data_date ?? '未核实'} · 运行编号 ${row.run_id ?? '未提供/待核'}`, 'manager-daily-meta'),
+          element('p', `产物 SHA256 ${row.product_sha256 ?? 'CANNOT_CONFIRM'} · 来源引用 ${row.source_refs.length} 项（完整保留在来源详情）`, 'manager-daily-meta'));
         list.append(item);
       }
       article.append(list);
     } else article.append(element('p', channel?.status === 'READY_EMPTY' ? '原 owner 已核空集。' : channel ? '当前没有可展示的已核候选，待核记录见详情。' : failure));
-    article.append(element('p', '自然时段运行验收：未核实。', 'manager-daily-meta'), diagnosticDetails(channel ?? { status: 'UNVERIFIED', reason: failure, date_bindings: bindings }));
+    article.append(element('p', '自然时段运行验收：CANNOT_CONFIRM（未核实）。', 'manager-daily-meta'), diagnosticDetails(channel ?? { status: 'CANNOT_CONFIRM', reason: failure, date_bindings: bindings }));
     grid.append(article);
   }
   host.append(element('p', '仅研究 · 未更新 BUY 准入 · 未发订单。', 'manager-daily-meta'));

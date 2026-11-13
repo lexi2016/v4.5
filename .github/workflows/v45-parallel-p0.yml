@@ -7,45 +7,57 @@ on:
 permissions:
   contents: read
 jobs:
-  baseline-web:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    defaults:
-      run:
-        working-directory: apps/web
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: 530beea8f3c3edd082d777cbe316b4b0322080ee
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - run: npm ci
-      - name: Baseline full web suite (known fixture gaps are recorded, not hidden)
-        run: npm test
-        continue-on-error: true
-  changed-web:
+  parallel-p0:
+    name: Additive pages, frozen sources and build
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
+      - name: Verify the fixed Git source tree and exact API candidate
+        run: python ../../tools/v45/verify_frozen_sources.py
       - run: node --check v45/entry-nav.js
       - run: node --check v45/selection/main.js
       - run: node --check v45/research/main.js
       - run: node --check v45/review/main.js
-      - run: node --test v45/shared/data.contract-check.mjs v45/entry-nav.contract-check.mjs
-      - name: Existing full web suite (baseline failures remain visible)
-        run: npm test
-        continue-on-error: true
-      - run: npm run typecheck
+      - run: node --check v45/shared/data.js
+      - run: node --check v45/shared/ui.js
+      - name: P0 contracts, actual page modules and legacy navigation
+        run: node --test v45/shared/data.contract-check.mjs v45/shared/p0.contract-check.mjs v45/entry-nav.contract-check.mjs v45/pages.contract-check.mjs v45/real-data.contract-check.mjs
+        # Two private real-data replay tests explicitly skip without V45_REPLAY_DIR.
+        # The verified local run is recorded separately; no raw package is uploaded.
       - run: npm run build
+  legacy-web-audit:
+    name: Full legacy suite and types (known failures remain blocking)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Full retained suite (API baseline and non-API residual tests)
+        run: npm test -- --maxWorkers 2 --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/v45-legacy-tests.json"
+      - name: Retained API typecheck
+        if: always()
+        run: npm run typecheck
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: legacy-test-results
+          path: ${{ runner.temp }}/v45-legacy-tests.json
+          if-no-files-found: ignore
